@@ -2,13 +2,22 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0d0d0f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <title>WORKOUT Sport Center — Методика</title>
   <meta name="description" content="Методические материалы WORKOUT Sport Center — Здоровое поколение">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/main.css">
+  <script src="js/paths.js"></script>
+  <link rel="stylesheet" href="css/main.css" id="mainStylesheet">
+  <script>
+    (function () {
+      var el = document.getElementById('mainStylesheet');
+      if (el && window.Workout) el.href = window.Workout.assetUrl('css/main.css');
+    })();
+  </script>
   <link rel="icon" href="logo.jpg" type="image/jpeg">
 </head>
 <body>
@@ -22,12 +31,8 @@
         <span class="header__tagline">Здоровое поколение · Sport Center</span>
       </div>
     </a>
-    <nav class="header__nav">
-      <button type="button" class="header__link is-active" data-filter="all">Все материалы</button>
-      <button type="button" class="header__link" data-filter="Уровни">Уровни</button>
-      <button type="button" class="header__link" data-filter="Методика">Методика</button>
-      <button type="button" class="header__link" data-filter="Разминка">Разминка</button>
-    </nav>
+    <nav class="header__nav header__nav--views" id="headerMainNav"></nav>
+    <nav class="header__nav header__nav--filters" id="headerFilters"></nav>
     <div class="header__search-wrap">
       <input type="search" class="header__search" placeholder="Поиск по материалам…" autocomplete="off" id="searchInput">
     </div>
@@ -41,10 +46,24 @@
       <div class="hero__stats" id="heroStats"></div>
     </section>
 
-    <section class="grid-section">
-      <div class="grid" id="cardsGrid" role="list"></div>
-      <p class="grid-empty hidden" id="gridEmpty">Ничего не найдено. Попробуйте другой запрос.</p>
-    </section>
+    <div class="load-banner hidden" id="loadBanner" role="alert">
+      <p id="loadBannerText">Загрузка материалов…</p>
+      <button type="button" class="load-banner__btn" onclick="location.reload()">Обновить</button>
+    </div>
+
+    <div id="viewMaterials">
+      <section class="grid-section">
+        <div class="grid" id="cardsGrid" role="list"></div>
+        <p class="grid-empty hidden" id="gridEmpty">Ничего не найдено. Попробуйте другой запрос.</p>
+      </section>
+    </div>
+
+    <div id="viewSections" class="hidden">
+      <p class="sections-intro">Компактные блоки по уровням — от простого к сложному. На компьютере при наведении карточка увеличивается.</p>
+      <div id="sectionsRoot"></div>
+    </div>
+
+    <div id="customPagesRoot" class="hidden"></div>
   </main>
 
   <!-- Detail overlay -->
@@ -79,6 +98,208 @@
     <p>© WORKOUT Sport Center · Здоровое поколение · 2016</p>
   </footer>
 
-  <script src="js/main.js" type="module"></script>
+  <div class="bottom-bar">
+    <button type="button" class="bottom-bar__admin" data-admin-open aria-label="Панель администратора">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+      </svg>
+      Админ-панель
+    </button>
+  </div>
+
+  <!-- Admin panel -->
+  <div class="admin" id="adminPanel" aria-hidden="true">
+    <div class="admin__backdrop" id="adminBackdrop"></div>
+    <div class="admin__sheet">
+      <header class="admin__header">
+        <h2>Администрирование</h2>
+        <button type="button" class="admin__close" id="adminCloseBtn" aria-label="Закрыть">×</button>
+      </header>
+
+      <div id="adminLogin" class="admin-login">
+        <p class="admin-login__hint">Вход для тренеров и администраторов</p>
+        <form id="adminLoginForm">
+          <input type="password" id="adminPassword" placeholder="Пароль" required autocomplete="current-password" inputmode="text">
+          <button type="submit" class="admin-btn admin-btn--primary">Войти</button>
+        </form>
+        <p class="admin-login__device">Работает на компьютере и телефоне. Пароль сохраняется на этом устройстве 30 дней.</p>
+        <p class="admin-login__error" id="adminLoginError"></p>
+      </div>
+
+      <div id="adminApp" class="admin-app hidden">
+        <nav class="admin-tabs">
+          <button type="button" class="admin-tab is-active" data-tab="materials">Материалы</button>
+          <button type="button" class="admin-tab" data-tab="sections">Разделы</button>
+          <button type="button" class="admin-tab" data-tab="builder">Конструктор</button>
+          <button type="button" class="admin-tab" data-tab="publish">Публикация</button>
+          <button type="button" class="admin-tab" data-tab="settings">Настройки</button>
+        </nav>
+
+        <div class="admin-tab-panel" data-tab="materials">
+          <div class="admin-toolbar">
+            <button type="button" class="admin-btn admin-btn--primary" id="adminAddBtn">+ Добавить материал</button>
+            <button type="button" class="admin-btn" id="adminLogout">Выйти</button>
+          </div>
+          <ul class="admin-list" id="adminArticleList"></ul>
+
+          <div class="admin-editor hidden" id="adminEditor">
+            <h3>Редактор материала</h3>
+            <label>Заголовок<input type="text" id="editorTitle" required></label>
+            <label>Краткое описание (на карточке)<textarea id="editorExcerpt" rows="2"></textarea></label>
+            <label>Дата<input type="date" id="editorDate"></label>
+            <label>Категория
+              <select id="editorCategory">
+                <option>Методика</option>
+                <option>Разминка</option>
+                <option>Соревнования</option>
+                <option>Клиенты</option>
+                <option>Первая помощь</option>
+              </select>
+            </label>
+            <label id="editorBodyWrap">Текст статьи <span class="label-hint">если нет подразделов — один текст; иначе кратко в описании на карточке</span>
+              <textarea id="editorBody" rows="4"></textarea>
+            </label>
+            <section class="editor-subsections">
+              <h4 class="admin-subsection__title">Подразделы (кнопки на сайте)</h4>
+              <p class="admin-help">Можно добавить к любому материалу. Есть подразделы — на сайте откроется список кнопок, как у «Первая помощь».</p>
+              <div id="editorHubItems" class="editor-hub-items"></div>
+            </section>
+            <label>Видео <span class="label-hint">строка: Название | ссылка VK, YouTube или Google Drive</span>
+              <textarea id="editorVideos" rows="4" placeholder="Упражнение | https://drive.google.com/file/d/.../view?usp=sharing"></textarea>
+            </label>
+            <div class="admin-editor__actions">
+              <button type="button" class="admin-btn admin-btn--primary" id="editorSave">Сохранить</button>
+              <button type="button" class="admin-btn" id="editorCancel">Отмена</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="admin-tab-panel hidden" data-tab="sections">
+          <p class="admin-help">Редактирование больших блоков: статические и силовые элементы, динамические, ОФП, СФП и др.</p>
+          <ul class="admin-sections-list" id="adminSectionsList"></ul>
+          <div class="admin-editor hidden" id="adminSectionEditor">
+            <h3 id="adminSectionEditorTitle">Редактор раздела</h3>
+            <div id="adminSectionEditorFields"></div>
+            <div class="admin-editor__actions">
+              <button type="button" class="admin-btn admin-btn--primary" id="adminSectionSave">Сохранить</button>
+              <button type="button" class="admin-btn" id="adminSectionCancel">Отмена</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="admin-tab-panel hidden" data-tab="builder">
+          <div id="siteBuilderRoot"></div>
+        </div>
+
+        <div class="admin-tab-panel hidden" data-tab="publish">
+          <h3>GitHub</h3>
+          <p class="admin-help">Репозиторий <code>knilseswork-pixel/site</code>, ветка <code>main</code>. Токен хранится только в этом браузере (не в коде на GitHub).</p>
+          <label>GitHub Token (ghp_…)
+            <input type="password" id="ghToken" autocomplete="off" placeholder="ghp_xxxxxxxxxxxxxxxx" style="font-family:monospace;width:100%">
+          </label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px">
+            <button type="button" class="admin-btn admin-btn--primary" id="ghSaveBtn">Сохранить токен</button>
+            <button type="button" class="admin-btn" id="ghCheckBtn">Проверить токен</button>
+            <button type="button" class="admin-btn admin-btn--danger" id="ghClearBtn">Удалить сохранённый</button>
+          </div>
+          <p class="admin-help" id="publishGhStatus">Введите токен, при необходимости нажмите «Сохранить».</p>
+          <button type="button" class="admin-btn admin-btn--primary" id="adminPublishGitHub" style="font-size:1rem;padding:14px 20px">
+            🚀 Опубликовать в GitHub (все файлы)
+          </button>
+          <p class="admin-help">Сайт обновится у всех через 1–2 минуты.</p>
+          <hr class="admin-hr">
+          <p class="admin-help">Или скачайте файлы вручную и загрузите сами:</p>
+          <button type="button" class="admin-btn" id="adminDownloadConfig">Скачать site-config.json</button>
+          <button type="button" class="admin-btn" id="adminDownload">Скачать content.json</button>
+          <button type="button" class="admin-btn" id="adminDownloadSections">Скачать sections.json</button>
+          <button type="button" class="admin-btn" id="adminImportSections">Импорт sections.json</button>
+          <input type="file" id="adminImportSectionsFile" accept=".json" hidden>
+          <button type="button" class="admin-btn admin-btn--danger" id="adminResetSections">Сбросить разделы (локально)</button>
+          <button type="button" class="admin-btn" id="adminPublishCloud">Опубликовать в облако</button>
+          <button type="button" class="admin-btn" id="adminImport">Импорт из файла</button>
+          <input type="file" id="adminImportFile" accept=".json" hidden>
+          <button type="button" class="admin-btn admin-btn--danger" id="adminReset">Сбросить локальные изменения</button>
+        </div>
+
+        <div class="admin-tab-panel hidden" data-tab="settings">
+          <h3>Смена пароля</h3>
+          <label>Новый пароль<input type="password" id="newPassword" autocomplete="new-password"></label>
+          <label>Повтор<input type="password" id="newPassword2" autocomplete="new-password"></label>
+          <button type="button" class="admin-btn" id="changePasswordBtn">Сменить пароль</button>
+          <hr class="admin-hr">
+
+          <p class="admin-help">Публикация в GitHub — вкладка <strong>«Публикация»</strong>: введите токен перед каждой отправкой.</p>
+          <hr class="admin-hr">
+
+          <h3>JSONBin (резервное облако)</h3>
+          <label>Bin ID<input type="text" id="jsonBinId" placeholder="6789abc..."></label>
+          <label>Access Key (чтение)<input type="text" id="jsonBinAccessKey"></label>
+          <label>Master Key (запись)<input type="password" id="jsonBinMasterKey"></label>
+          <button type="button" class="admin-btn" id="saveJsonBinSettings">Сохранить ключи</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="admin-toast" id="adminToast"></div>
+
+  <script>
+    (function () {
+      var BUILD = '20260528v';
+      var scripts = [
+        'js/media-url.js',
+        'js/media-lightbox.js',
+        'js/hub-items-editor.js',
+        '_optional:js/github-local.config.js',
+        '_optional:js/github-secrets.local.js',
+        'js/github-push.js',
+        'js/site-config-data.js',
+        'js/content-data.js',
+        'js/level-sort.js',
+        'js/sections-data.js',
+        'js/site-config-store.js',
+        'js/content-store.js',
+        'js/sections-groups.js',
+        'js/sections-store.js',
+        'js/admin.js',
+        'js/sections-admin.js',
+        'js/site-builder.js',
+        'js/site-nav.js',
+        'js/main.js',
+        'js/sections-ui.js'
+      ];
+      function srcFor(path) {
+        var url = (window.Workout && window.Workout.assetUrl) ? window.Workout.assetUrl(path) : path;
+        return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + BUILD;
+      }
+      function boot() {
+        if (window.WorkoutBoot) {
+          window.WorkoutBoot();
+        }
+      }
+      function loadNext(i) {
+        if (i >= scripts.length) {
+          boot();
+          return;
+        }
+        var entry = scripts[i];
+        var optional = entry.indexOf('_optional:') === 0;
+        var path = optional ? entry.slice(10) : entry;
+        var el = document.createElement('script');
+        el.src = srcFor(path);
+        el.async = false;
+        el.onload = function () { loadNext(i + 1); };
+        el.onerror = function () {
+          if (!optional) console.error('Не удалось загрузить:', path);
+          loadNext(i + 1);
+        };
+        document.body.appendChild(el);
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () { loadNext(0); });
+      } else {
+        loadNext(0);
+      }
+    })();
+  </script>
 </body>
 </html>
