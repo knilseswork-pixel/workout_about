@@ -4,7 +4,7 @@
  */
 (function () {
   var STORAGE_GH = 'workout_github_token';
-  var DEFAULT_REPO   = 'knilseswork-pixel/site';
+  var DEFAULT_REPO   = 'knilseswork-pixel/workout_about';
   var DEFAULT_BRANCH = 'main';
 
   var FILE_PATHS = {
