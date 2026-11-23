@@ -68,26 +68,14 @@
     return getBookmarks().indexOf(id) >= 0;
   }
 
-  function videoSrc(path) {
-    if (!path) return '';
-    if (/^https?:\/\//i.test(path)) return path;
-    return path.split('/').map(function (part, i) {
-      return i === 0 ? part : encodeURIComponent(part);
-    }).join('/');
-  }
-
   function isMobileViewer() {
     return window.matchMedia('(max-width: 900px)').matches ||
       window.matchMedia('(pointer: coarse)').matches;
   }
 
-  function isDriveMedia(url) {
-    return window.WorkoutMedia && window.WorkoutMedia.isDriveUrl(url);
-  }
-
   function renderDriveVideoBlock(title, embedUrl, openUrl) {
-    var safeEmbed = embedUrl.replace(/"/g, '&quot;');
-    var safeOpen = openUrl.replace(/"/g, '&quot;');
+    var safeEmbed = escapeHtml(embedUrl);
+    var safeOpen = escapeHtml(openUrl);
     if (isMobileViewer()) {
       return (
         '<div class="video-block video-block--drive-mobile">' +
@@ -137,75 +125,42 @@
     }
   }
 
-  function renderVideoBlock(v) {
-    var title = escapeHtml(v.title || 'Видео');
-    var WM = window.WorkoutMedia;
-    if (v.src) {
-      var rawSrc = v.src;
-      if (WM && WM.isDriveUrl(rawSrc)) {
-        var driveFromSrc = WM.normalizeVideo(rawSrc);
-        if (driveFromSrc.type === 'embed') {
-          return renderDriveVideoBlock(title, driveFromSrc.url, driveFromSrc.openUrl || WM.driveOpenUrl(rawSrc));
-        }
-      }
-      var src = videoSrc(rawSrc);
-      return (
-        '<div class="video-block"><h3>' + title + '</h3>' +
-        '<video class="video-player" controls playsinline preload="metadata" src="' + escapeHtml(src) + '"></video></div>'
-      );
+  function renderVideoBlock(video) {
+    if (!video) return '';
+    var title = escapeHtml(video.title || 'Видео');
+    var normalized = window.WorkoutMedia.normalizeVideo(video.embed || video.src);
+    if (normalized.provider === 'drive') {
+      return renderDriveVideoBlock(title, normalized.url, normalized.openUrl);
     }
-    if (v.embed) {
-      if (isDriveMedia(v.embed)) {
-        var openDrive = WM ? WM.driveOpenUrl(v.embed) : v.embed;
-        var previewDrive = v.embed;
-        if (WM) {
-          var normDrive = WM.normalizeVideo(v.embed);
-          if (normDrive.type === 'embed') {
-            previewDrive = normDrive.url;
-            openDrive = normDrive.openUrl || openDrive;
-          }
-        }
-        return renderDriveVideoBlock(title, previewDrive, openDrive);
+    if (normalized.type === 'embed') {
+      var isVk = normalized.provider === 'vk';
+      var watch = escapeHtml(normalized.openUrl || vkEmbedToWatchUrl(normalized.url));
+      if (isVk && isMobileViewer()) {
+        return '<div class="video-block video-block--vk-mobile"><h3>' + title + '</h3>' +
+          '<a class="vk-open-card" href="' + watch + '" target="_blank" rel="noopener noreferrer">' +
+          '<span class="vk-open-card__icon" aria-hidden="true">▶</span><span class="vk-open-card__text">Смотреть в VK</span></a></div>';
       }
 
-      var watchUrl = vkEmbedToWatchUrl(v.embed);
-      var safeEmbed = v.embed.replace(/"/g, '&quot;');
-      var safeWatch = watchUrl.replace(/"/g, '&quot;');
-
-      if (isMobileViewer()) {
-        return (
-          '<div class="video-block video-block--vk-mobile">' +
-          '<h3>' + title + '</h3>' +
-          '<a class="vk-open-card" href="' + safeWatch + '" target="_blank" rel="noopener noreferrer">' +
-          '<span class="vk-open-card__icon" aria-hidden="true">▶</span>' +
-          '<span class="vk-open-card__text">Смотреть в VK</span>' +
-          '<span class="vk-open-card__sub">Нажмите — откроется приложение или сайт VK</span>' +
-          '</a></div>'
-        );
-      }
-
-      return (
-        '<div class="video-block video-block--vk">' +
-        '<h3>' + title + '</h3>' +
+      return '<div class="video-block video-block--vk"><h3>' + title + '</h3>' +
         '<div class="video-frame-wrap">' +
-        '<iframe src="' + safeEmbed + '" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>' +
-        '</div>' +
-        '<a class="vk-open-link" href="' + safeWatch + '" target="_blank" rel="noopener noreferrer">Не воспроизводится? Открыть в VK</a>' +
-        '</div>'
-      );
+        '<iframe src="' + escapeHtml(normalized.url) + '" title="' + title +
+        '" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe></div>' +
+        '<a class="vk-open-link" href="' + watch + '" target="_blank" rel="noopener noreferrer">Открыть в ' +
+        (isVk ? 'VK' : 'YouTube') + '</a></div>';
     }
-    return '';
+
+    var src = window.WorkoutAttachments.assetUrl(normalized.url);
+    if (!src) return '';
+    return '<div class="video-block"><h3>' + title + '</h3>' +
+      '<video class="video-player" controls playsinline preload="metadata" src="' + escapeHtml(src) + '"></video></div>';
   }
 
   window.renderVideoBlock = renderVideoBlock;
 
-  function escapeHtml(s) {
-    var d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
-  }
+  const escapeHtml = window.WorkoutMedia.escapeHtml;
 
   function markdownLite(text) {
+    text = escapeHtml(text);
     if (text.indexOf('•') >= 0) {
       var parts = text.split('\n');
       var items = parts.filter(function (p) { return p.trim().indexOf('•') === 0; })
@@ -295,14 +250,14 @@
       '<button type="button" class="gpp-back hub-back-topics">← К разделам</button>' +
       '<h3 class="gpp-exercise-detail__title">' +
       escapeHtml(item.title) +
-      '</h3>' +
+      '</h3>' + window.renderWorkoutPhotos(item) +
       '<div class="prose hub-item-body">';
     if (item.body && item.body.length) {
       html += item.body.map(markdownLite).join('');
-    } else {
+    } else if (!(window.WorkoutAttachments.photos(item).length || item.videos?.length)) {
       html += '<p>Текст пока не добавлен. Заполните в админ-панели.</p>';
     }
-    html += '</div></div>';
+    html += '</div>' + (item.videos || []).map(renderVideoBlock).join('') + '</div>';
     return html;
   }
 
@@ -325,18 +280,7 @@
         topicsEl.classList.add('hidden');
         viewEl.classList.remove('hidden');
         viewEl.innerHTML = renderHubItemContent(item);
-        var videos = item.videos || [];
-        var videosEl = $('#detailVideos');
-        if (videos.length && window.renderVideoBlock) {
-          videosEl.innerHTML = videos.map(renderVideoBlock).join('');
-          videosEl.hidden = false;
-        } else {
-          videosEl.innerHTML = '';
-          videosEl.hidden = true;
-        }
         viewEl.querySelector('.hub-back-topics').addEventListener('click', function () {
-          videosEl.innerHTML = '';
-          videosEl.hidden = true;
           showTopics();
         });
         viewEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -417,7 +361,7 @@
         '<div class="card__media">' +
         '<div class="card__media-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12h8M12 8v8"/></svg></div>' +
         '<div class="card__accent"></div>' +
-        '<button type="button" class="card__bookmark' + (saved ? ' is-saved' : '') + '" data-bookmark="' + article.id + '" aria-label="Закладка">' +
+        '<button type="button" class="card__bookmark' + (saved ? ' is-saved' : '') + '" data-bookmark="' + escapeHtml(article.id) + '" aria-label="Закладка">' +
         '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg></button></div>' +
         '<div class="card__body"><span class="card__category">' + escapeHtml(article.category) + '</span>' +
         '<h3 class="card__title' + underline + '">' + escapeHtml(article.title) + '</h3>' +
@@ -476,23 +420,16 @@
     $('#detailMeta').textContent = formatDate(article.date);
 
     var videosEl = $('#detailVideos');
+    var photos = window.renderWorkoutPhotos(article);
     if (isHubArticle(article)) {
-      $('#detailContent').innerHTML = renderHubLevel(article);
+      $('#detailContent').innerHTML = photos + renderHubLevel(article);
       var hubRoot = $('#detailContent .hub-materials-ui');
       if (hubRoot) bindHubNav(hubRoot, article);
-      videosEl.innerHTML = '';
-      videosEl.hidden = true;
     } else {
-      $('#detailContent').innerHTML = (article.body || []).map(markdownLite).join('');
-      var videos = article.videos || [];
-      if (videos.length) {
-        videosEl.innerHTML = videos.map(renderVideoBlock).join('');
-        videosEl.hidden = false;
-      } else {
-        videosEl.innerHTML = '';
-        videosEl.hidden = true;
-      }
+      $('#detailContent').innerHTML = photos + (article.body || []).map(markdownLite).join('');
     }
+    videosEl.innerHTML = (article.videos || []).map(renderVideoBlock).join('');
+    videosEl.hidden = !videosEl.innerHTML;
 
     $('#detailMedia').innerHTML = '<img src="' + (window.Workout.assetUrl('logo.jpg')) + '" alt="" class="detail__hero-logo" width="80" height="80">';
 
@@ -502,7 +439,7 @@
     bmBtn.onclick = function () {
       var now = toggleBookmark(id);
       bmBtn.classList.toggle('is-saved', now);
-      $$('[data-bookmark="' + id + '"]').forEach(function (b) {
+      $$('[data-bookmark="' + CSS.escape(id) + '"]').forEach(function (b) {
         b.classList.toggle('is-saved', now);
       });
       renderStats();
@@ -526,6 +463,8 @@
     $('#detail').setAttribute('aria-hidden', 'true');
     document.body.classList.remove('detail-open');
     openArticleId = null;
+    $('#detailContent').replaceChildren();
+    $('#detailVideos').replaceChildren();
     var bmBtn = $('#detailBookmark');
     if (bmBtn) bmBtn.style.visibility = '';
     var ghost = $('#cardGhost');
@@ -609,7 +548,7 @@
     }
 
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && $('#detail').classList.contains('is-open')) closeDetail();
+      if (e.key === 'Escape' && !$('#mediaLightbox.is-open') && $('#detail').classList.contains('is-open')) closeDetail();
     });
 
     window.addEventListener('content-updated', function () {
@@ -652,6 +591,11 @@
       if (window.SiteConfigStore) await window.SiteConfigStore.loadSiteConfig();
       await loadContent();
       if (window.SectionsStore) await window.SectionsStore.loadSections();
+      if (window.SiteConfigStore.isDraftEnabled()) {
+        await window.WorkoutAttachments.loadPreviews(window.SiteConfigStore.getDraftFiles()).catch(function (error) {
+          console.warn('Не удалось восстановить локальный предпросмотр вложений:', error);
+        });
+      }
       if (window.SiteNav) await window.SiteNav.init();
       if (window.WorkoutAdmin) {
         try {

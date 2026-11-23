@@ -164,11 +164,9 @@
               <p class="admin-help">Можно добавить к любому материалу. Есть подразделы — на сайте откроется список кнопок, как у «Первая помощь».</p>
               <div id="editorHubItems" class="editor-hub-items"></div>
             </section>
-            <label>Видео <span class="label-hint">строка: Название | ссылка VK, YouTube или Google Drive</span>
-              <textarea id="editorVideos" rows="4" placeholder="Упражнение | https://drive.google.com/file/d/.../view?usp=sharing"></textarea>
-            </label>
+            <div id="editorAttachments"></div>
             <div class="admin-editor__actions">
-              <button type="button" class="admin-btn admin-btn--primary" id="editorSave">Сохранить</button>
+              <button type="button" class="admin-btn admin-btn--primary" id="editorSave">Сохранить черновик</button>
               <button type="button" class="admin-btn" id="editorCancel">Отмена</button>
             </div>
           </div>
@@ -181,7 +179,7 @@
             <h3 id="adminSectionEditorTitle">Редактор раздела</h3>
             <div id="adminSectionEditorFields"></div>
             <div class="admin-editor__actions">
-              <button type="button" class="admin-btn admin-btn--primary" id="adminSectionSave">Сохранить</button>
+              <button type="button" class="admin-btn admin-btn--primary" id="adminSectionSave">Сохранить черновик</button>
               <button type="button" class="admin-btn" id="adminSectionCancel">Отмена</button>
             </div>
           </div>
@@ -202,11 +200,12 @@
             <button type="button" class="admin-btn" id="ghCheckBtn">Проверить токен</button>
             <button type="button" class="admin-btn admin-btn--danger" id="ghClearBtn">Удалить сохранённый</button>
           </div>
-          <p class="admin-help" id="publishGhStatus">Введите токен, при необходимости нажмите «Сохранить».</p>
+          <p class="admin-help" id="publishGhStatus" role="status">Введите токен, при необходимости нажмите «Сохранить».</p>
+          <a id="publishGhCommit" target="_blank" rel="noopener noreferrer" hidden>Открыть коммит на GitHub</a>
           <button type="button" class="admin-btn admin-btn--primary" id="adminPublishGitHub" style="font-size:1rem;padding:14px 20px">
-            🚀 Опубликовать в GitHub (все файлы)
+            Опубликовать черновики в GitHub
           </button>
-          <p class="admin-help">Сайт обновится у всех через 1–2 минуты.</p>
+          <p class="admin-help">После сохранения коммита GitHub Pages отдельно обновляет публичный сайт.</p>
           <hr class="admin-hr">
           <p class="admin-help">Или скачайте файлы вручную и загрузите сами:</p>
           <button type="button" class="admin-btn" id="adminDownloadConfig">Скачать site-config.json</button>
@@ -244,13 +243,12 @@
 
   <script>
     (function () {
-      var BUILD = '20260821v';
+      var BUILD = '20261123a';
       var scripts = [
         'js/media-url.js',
+        'js/media-attachments.js',
         'js/media-lightbox.js',
         'js/hub-items-editor.js',
-        '_optional:js/github-local.config.js',
-        '_optional:js/github-secrets.local.js',
         'js/github-push.js',
         'js/site-config-data.js',
         'js/content-data.js',
@@ -281,15 +279,13 @@
           boot();
           return;
         }
-        var entry = scripts[i];
-        var optional = entry.indexOf('_optional:') === 0;
-        var path = optional ? entry.slice(10) : entry;
+        var path = scripts[i];
         var el = document.createElement('script');
         el.src = srcFor(path);
         el.async = false;
         el.onload = function () { loadNext(i + 1); };
         el.onerror = function () {
-          if (!optional) console.error('Не удалось загрузить:', path);
+          console.error('Не удалось загрузить:', path);
           loadNext(i + 1);
         };
         document.body.appendChild(el);

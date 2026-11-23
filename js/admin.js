@@ -3,6 +3,7 @@
  */
 (function () {
   const S = window.WorkoutStore;
+  const attachments = window.WorkoutAttachments;
   const STORAGE_PASSWORD = S.STORAGE_PASSWORD;
   const STORAGE_JSONBIN = S.STORAGE_JSONBIN;
   const getContentData = () => S.getContentData();
@@ -33,6 +34,7 @@ function notifyContentUpdated() {
 
 function openAdmin() {
   $('#adminPanel')?.classList.add('is-open');
+  $('#adminPanel')?.setAttribute('aria-hidden', 'false');
   document.body.classList.add('admin-open');
   renderAdminList();
   if (window.SectionsAdmin) window.SectionsAdmin.renderList();
@@ -40,6 +42,7 @@ function openAdmin() {
 
 function closeAdmin() {
   $('#adminPanel')?.classList.remove('is-open');
+  $('#adminPanel')?.setAttribute('aria-hidden', 'true');
   document.body.classList.remove('admin-open');
   hideEditor();
 }
@@ -80,11 +83,11 @@ function renderAdminList() {
     <li class="admin-list__item">
       <div class="admin-list__info">
         <strong>${escapeHtml(a.title)}</strong>
-        <span>${escapeHtml(a.category)} · ${a.date || ''}</span>
+        <span>${escapeHtml(a.category)} · ${escapeHtml(a.date)}</span>
       </div>
       <div class="admin-list__actions">
-        <button type="button" class="admin-btn admin-btn--sm" data-edit="${a.id}">Изменить</button>
-        <button type="button" class="admin-btn admin-btn--sm admin-btn--danger" data-del="${a.id}">Удалить</button>
+        <button type="button" class="admin-btn admin-btn--sm" data-edit="${escapeHtml(a.id)}">Изменить</button>
+        <button type="button" class="admin-btn admin-btn--sm admin-btn--danger" data-del="${escapeHtml(a.id)}">Удалить</button>
       </div>
     </li>`
     )
@@ -98,11 +101,7 @@ function renderAdminList() {
   });
 }
 
-function escapeHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
-}
+const escapeHtml = window.WorkoutMedia.escapeHtml;
 
 function hideEditor() {
   editingId = null;
@@ -112,7 +111,6 @@ function hideEditor() {
 function mountMaterialHubEditor(items) {
   if (!window.WorkoutHubItemsEditor) return null;
   var root = $('#editorHubItems');
-  if (root) root.dataset.hubBound = '';
   materialHubEditor = window.WorkoutHubItemsEditor.mount(root, items || []);
   return materialHubEditor;
 }
@@ -136,13 +134,10 @@ function openEditor(id = null) {
   }
   $('#editorCategory').value = article?.category || 'Методика';
   $('#editorBody').value = (article?.body || []).join('\n\n');
-  $('#editorVideos').value = window.WorkoutHubItemsEditor
-    ? window.WorkoutHubItemsEditor.formatVideosForEditor(article?.videos || [])
-    : '';
+  $('#editorAttachments').innerHTML = attachments.renderEditor(article || {});
 
   const hasHub = hubItems.length > 0;
   $('#editorBodyWrap')?.classList.toggle('hidden', hasHub);
-  $('#editorVideos')?.closest('label')?.classList.toggle('hidden', hasHub);
   mountMaterialHubEditor(hubItems);
 }
 
@@ -155,11 +150,12 @@ function collectEditorData() {
   const existing = editingId ? data.articles.find((a) => a.id === editingId) : null;
 
   const items = materialHubEditor ? materialHubEditor.collect() : [];
+  const media = attachments.collectEditor($('#editorAttachments'));
 
   if (items.length > 0) {
     const hub = {
       ...existing,
-      id: existing?.id || slugId(title) || 'article-' + Date.now(),
+      id: articleId(data, title),
       title,
       excerpt,
       date,
@@ -168,9 +164,10 @@ function collectEditorData() {
       subSections: items,
       items: items,
       body: [],
-      videos: [],
+      ...media,
       accent: existing?.accent || '#FF2D2D',
     };
+    delete hub.photo;
     if (window.WorkoutHubItemsEditor) window.WorkoutHubItemsEditor.syncItemsAlias(hub);
     return hub;
   }
@@ -179,54 +176,65 @@ function collectEditorData() {
     .split(/\n\n+/)
     .map((p) => p.trim())
     .filter(Boolean);
-  const videos = window.WorkoutHubItemsEditor
-    ? window.WorkoutHubItemsEditor.parseVideosFromEditor($('#editorVideos').value)
-    : [];
-
-  let id = editingId || slugId(title);
-  if (!editingId && data.articles.some((a) => a.id === id)) {
-    id = `${id}-${Date.now()}`;
-  }
-
   const plain = {
     ...existing,
-    id,
+    id: articleId(data, title),
     title,
     excerpt,
     date,
     category,
     accent: existing?.accent || '#FF2D2D',
     body,
-    videos,
+    ...media,
   };
+  delete plain.photo;
   delete plain.type;
   delete plain.items;
   delete plain.subSections;
   return plain;
 }
 
+function articleId(data, title) {
+  const id = editingId || slugId(title);
+  return !editingId && data.articles.some((a) => a.id === id) ? id + '-' + Date.now() : id;
+}
+
 function saveArticle() {
   const article = collectEditorData();
-  const data = getContentData();
+  if (!article.title) {
+    showToast('Введите название материала');
+    return;
+  }
+  const current = getContentData();
+  const data = { ...current, articles: current.articles.slice() };
   const idx = data.articles.findIndex((a) => a.id === article.id);
   if (idx >= 0) data.articles[idx] = article;
   else data.articles.unshift(article);
 
-  saveContentLocal(data);
+  try {
+    saveContentLocal(data);
+  } catch (error) {
+    showToast(error.message);
+    return;
+  }
   notifyContentUpdated();
   renderAdminList();
   hideEditor();
-  showToast('Материал сохранён');
+  showToast('Черновик материала сохранён в этом браузере');
 }
 
 function deleteArticle(id) {
   if (!confirm('Удалить этот материал?')) return;
   const data = getContentData();
-  data.articles = data.articles.filter((a) => a.id !== id);
-  saveContentLocal(data);
+  try {
+    saveContentLocal({ ...data, articles: data.articles.filter((a) => a.id !== id) });
+  } catch (error) {
+    showToast(error.message);
+    return;
+  }
   notifyContentUpdated();
   renderAdminList();
-  showToast('Удалено');
+  showToast('Материал удалён из черновика');
 }
 
 function showToast(msg) {
@@ -376,7 +384,12 @@ function bindGhEvents() {
         showToast('Токен не принят GitHub');
         return;
       }
-      window.GitHubPush.saveStoredToken(token);
+      try {
+        window.GitHubPush.saveStoredToken(token);
+      } catch (error) {
+        updatePublishHint('Не удалось сохранить токен в браузере. Его можно использовать из поля ввода.', false);
+        return;
+      }
       updatePublishHint('✓ Токен сохранён (' + check.login + ') в этом браузере', true);
       showToast('Токен сохранён');
     });
@@ -410,7 +423,7 @@ function bindGhEvents() {
       try {
         var result = await window.GitHubPush.checkToken(token);
         if (result.ok) {
-          updatePublishHint('✓ Токен работает (' + result.login + ')', true);
+          updatePublishHint('Токен принят (' + result.login + '). Ветка доступна для чтения. Право записи проверяется при публикации.', true);
         } else {
           updatePublishHint('✗ ' + (result.reason || 'Токен не принят'), false);
         }
@@ -436,48 +449,33 @@ function bindGhEvents() {
         return;
       }
 
-      var preCheck = await window.GitHubPush.checkToken(token);
-      if (!preCheck.ok) {
-        alert('Токен не принят GitHub:\n\n' + (preCheck.reason || 'Ошибка'));
-        updatePublishHint('✗ ' + (preCheck.reason || 'Токен не принят'), false);
-        return;
-      }
-
       var btn = publishGhBtn;
       var origText = btn.textContent;
       btn.disabled = true;
+      var commitLink = $('#publishGhCommit');
+      commitLink.hidden = true;
 
       try {
-        var files = {
-          siteConfig: window.SiteConfigStore ? window.SiteConfigStore.getSiteConfig() : null,
-          content: getContentData(),
-          sections: window.SectionsStore ? window.SectionsStore.getSectionsData() : null,
-        };
-
-        await window.GitHubPush.publishAll(
+        var files = window.SiteConfigStore.getDraftFiles();
+        var result = await window.GitHubPush.publishAll(
           files,
           function (msg) {
-            btn.textContent = msg;
-            showToast(msg);
+            updatePublishHint(msg);
           },
           token
         );
-
-        if (window.SiteConfigStore) window.SiteConfigStore.clearAllDrafts();
-
-        if (window.GitHubPush.hasStoredToken()) {
-          setGhTokenInput(window.GitHubPush.loadStoredToken());
-          updatePublishHint('✅ Опубликовано. Сохранённый токен на месте.', true);
-        } else {
-          updatePublishHint('✅ Опубликовано.', true);
-        }
+        commitLink.href = 'https://github.com/' + window.GitHubPush.DEFAULT_REPO + '/commit/' + result.sha;
+        commitLink.textContent = 'Открыть коммит ' + result.sha.slice(0, 7);
+        commitLink.hidden = false;
+        updatePublishHint('GitHub подтвердил коммит в ветке ' + window.GitHubPush.DEFAULT_BRANCH + '. Публичный сайт обновляется через GitHub Pages.', true);
+        showToast('Сохранено на GitHub');
       } catch (e) {
+        updatePublishHint('Публикация не подтверждена. ' + e.message, false);
         showToast('Ошибка: ' + e.message);
-        alert('Ошибка публикации:\n' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = origText;
       }
-
-      btn.disabled = false;
-      btn.textContent = origText;
     });
   }
 

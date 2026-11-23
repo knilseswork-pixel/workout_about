@@ -4,16 +4,13 @@
 (function () {
   var SC = window.SiteConfigStore;
   var S = window.WorkoutStore;
+  var attachments = window.WorkoutAttachments;
 
   function $(sel, root) {
     return (root || document).querySelector(sel);
   }
 
-  function escapeHtml(s) {
-    var d = document.createElement('div');
-    d.textContent = s == null ? '' : String(s);
-    return d.innerHTML;
-  }
+  const escapeHtml = window.WorkoutMedia.escapeHtml;
 
   function showToast(msg) {
     var t = $('#adminToast');
@@ -37,40 +34,14 @@
     return SC.getSiteConfig() || { version: 1, site: {}, mainTabs: [], materialFilters: [], customPages: [] };
   }
 
-  function formatVideosForEditor(videos) {
-    return (videos || [])
-      .map(function (v) {
-        return (v.title || 'Видео') + ' | ' + (v.embed || v.src || '');
-      })
-      .join('\n');
-  }
-
-  function parseVideosFromEditor(text) {
-    var lines = String(text || '')
-      .split('\n')
-      .map(function (l) {
-        return l.trim();
-      })
-      .filter(Boolean);
-    return lines.map(function (line, i) {
-      var title = 'Видео ' + (i + 1);
-      var url = line;
-      if (line.indexOf('|') !== -1) {
-        var parts = line.split('|');
-        title = parts[0].trim() || title;
-        url = parts.slice(1).join('|').trim();
-      }
-      var iframe = url.match(/src=["']([^"']+)["']/i);
-      if (iframe) url = iframe[1];
-      if (window.WorkoutMedia && window.WorkoutMedia.isDriveUrl(url)) {
-        var norm = window.WorkoutMedia.normalizeVideo(url);
-        if (norm.type === 'embed') return { title: title, embed: norm.url };
-      }
-      if (/vk\.com|youtube|youtu\.be/i.test(url)) {
-        return { title: title, embed: url };
-      }
-      return { title: title, src: url };
-    });
+  function saveConfig(cfg) {
+    try {
+      SC.saveSiteConfigLocal(cfg);
+      return true;
+    } catch (error) {
+      showToast(error.message);
+      return false;
+    }
   }
 
   function renderBuilder() {
@@ -85,7 +56,7 @@
       '">' +
       (draft
         ? '<p>⚠ Сейчас на этом устройстве показан <strong>черновик</strong>. Другие пользователи видят файлы с GitHub.</p>'
-        : '<p>✓ Показываются данные с сайта (GitHub). После правок скачайте JSON и загрузите в репозиторий.</p>') +
+        : '<p>Показываются данные с GitHub Pages. Сохранённые правки можно отправить через вкладку «Публикация».</p>') +
       '</div>' +
       '<section class="builder-section">' +
       '<h3>Версия сайта</h3>' +
@@ -127,7 +98,7 @@
       '<ol class="builder-steps">' +
       '<li>Нажмите «Сохранить черновик» — проверьте на сайте.</li>' +
       '<li>Скачайте все JSON (кнопки ниже).</li>' +
-      '<li>Замените файлы в папке <code>data/</code> на GitHub и сделайте push.</li>' +
+      '<li>Замените файлы в папке <code>data/</code> на GitHub и сделайте push. Для новых вложений используйте вкладку «Публикация».</li>' +
       '<li>Через 1–3 минуты обновление увидят все.</li>' +
       '</ol>' +
       '<button type="button" class="admin-btn admin-btn--primary" id="builderSaveDraft">Сохранить черновик на устройстве</button>' +
@@ -230,6 +201,7 @@
                 '<textarea class="builder-block-text" rows="3">' +
                 escapeHtml((block.body || []).join('\n\n')) +
                 '</textarea>' +
+                attachments.renderEditor(block) +
                 '<button type="button" class="admin-btn admin-btn--sm admin-btn--danger builder-del-block">Удалить блок</button></div>'
               );
             }
@@ -249,10 +221,7 @@
                     '<textarea class="builder-item-body" rows="2" placeholder="Текст">' +
                     escapeHtml((it.body || []).join('\n\n')) +
                     '</textarea>' +
-                    '<label class="admin-field">Видео <span class="label-hint">Название | ссылка</span>' +
-                    '<textarea class="builder-item-videos" rows="2">' +
-                    escapeHtml(formatVideosForEditor(it.videos || [])) +
-                    '</textarea></label></div>'
+                    attachments.renderEditor(it) + '</div>'
                   );
                 })
                 .join('');
@@ -296,7 +265,7 @@
   }
 
   function collectConfigFromForm() {
-    var cfg = getConfig();
+    var cfg = structuredClone(getConfig());
     cfg.version = parseInt($('#builderVersion').value, 10) || 1;
     cfg.site = {
       heroBadge: $('#builderHeroBadge').value.trim(),
@@ -329,6 +298,7 @@
           category: row.querySelector('.builder-filter-cat').value.trim(),
         });
       });
+    collectPagesFromDom(cfg);
     return cfg;
   }
 
@@ -355,11 +325,11 @@
                   return p.trim();
                 })
                 .filter(Boolean),
+              ...attachments.collectEditor(blockEl),
             });
           } else if (blockEl.querySelector('.builder-hub-items')) {
             var items = [];
             blockEl.querySelectorAll('.builder-hub-item').forEach(function (itemEl, ii) {
-              var videosEl = itemEl.querySelector('.builder-item-videos');
               items.push({
                 id: itemEl.getAttribute('data-item-id') || 'item-' + Date.now(),
                 title: itemEl.querySelector('.builder-item-title').value.trim() || 'Пункт',
@@ -370,7 +340,7 @@
                     return p.trim();
                   })
                   .filter(Boolean),
-                videos: parseVideosFromEditor(videosEl ? videosEl.value : ''),
+                ...attachments.collectEditor(itemEl),
               });
             });
             blocks.push({ type: 'hub', title: titleText, items: items });
@@ -385,13 +355,13 @@
     $('#builderAddTab')?.addEventListener('click', function () {
       var cfg = collectConfigFromForm();
       cfg.mainTabs.push({ id: 'custom-' + Date.now(), label: 'Новая вкладка', type: 'materials' });
-      SC.saveSiteConfigLocal(cfg);
+      if (!saveConfig(cfg)) return;
       renderBuilder();
     });
     $('#builderAddFilter')?.addEventListener('click', function () {
       var cfg = collectConfigFromForm();
       cfg.materialFilters.push({ id: 'f-new', label: 'Новая категория', category: 'Новая категория' });
-      SC.saveSiteConfigLocal(cfg);
+      if (!saveConfig(cfg)) return;
       renderBuilder();
     });
     $('#builderAddPage')?.addEventListener('click', function () {
@@ -404,7 +374,7 @@
         intro: '',
         blocks: [{ type: 'text', title: 'Описание', body: ['Добавьте текст'] }],
       });
-      SC.saveSiteConfigLocal(cfg);
+      if (!saveConfig(cfg)) return;
       renderBuilder();
     });
 
@@ -413,7 +383,7 @@
         var cfg = collectConfigFromForm();
         var i = parseInt(e.target.closest('.builder-row').dataset.tabI, 10);
         cfg.mainTabs.splice(i, 1);
-        SC.saveSiteConfigLocal(cfg);
+        if (!saveConfig(cfg)) return;
         renderBuilder();
       }
     });
@@ -429,34 +399,33 @@
         var cfg = collectConfigFromForm();
         var i = parseInt(e.target.closest('.builder-row').dataset.filterI, 10);
         cfg.materialFilters.splice(i, 1);
-        SC.saveSiteConfigLocal(cfg);
+        if (!saveConfig(cfg)) return;
         renderBuilder();
       }
     });
 
     $('#builderPagesList')?.addEventListener('click', function (e) {
       var cfg = collectConfigFromForm();
-      collectPagesFromDom(cfg);
       var pageEl = e.target.closest('.builder-page');
       var blockEl = e.target.closest('.builder-block');
       var pi = pageEl ? parseInt(pageEl.dataset.pageI, 10) : -1;
 
       if (e.target.classList.contains('builder-del-page') && pi >= 0) {
         cfg.customPages.splice(pi, 1);
-        SC.saveSiteConfigLocal(cfg);
+        if (!saveConfig(cfg)) return;
         renderBuilder();
         return;
       }
       if (e.target.classList.contains('builder-del-block') && blockEl) {
         var bi = parseInt(blockEl.dataset.block, 10);
         cfg.customPages[pi].blocks.splice(bi, 1);
-        SC.saveSiteConfigLocal(cfg);
+        if (!saveConfig(cfg)) return;
         renderBuilder();
         return;
       }
       if (e.target.classList.contains('builder-add-text-block') && pi >= 0) {
         cfg.customPages[pi].blocks.push({ type: 'text', title: 'Новый текст', body: [] });
-        SC.saveSiteConfigLocal(cfg);
+        if (!saveConfig(cfg)) return;
         renderBuilder();
         return;
       }
@@ -466,14 +435,14 @@
           title: 'Новый раздел',
           items: [{ id: 'item-0', title: 'Пункт 1', body: [], videos: [] }],
         });
-        SC.saveSiteConfigLocal(cfg);
+        if (!saveConfig(cfg)) return;
         renderBuilder();
         return;
       }
       if (e.target.classList.contains('builder-add-hub-item') && blockEl) {
         var bi2 = parseInt(blockEl.dataset.block, 10);
         cfg.customPages[pi].blocks[bi2].items.push({ id: 'item-' + Date.now(), title: 'Новый подраздел', body: [], videos: [] });
-        SC.saveSiteConfigLocal(cfg);
+        if (!saveConfig(cfg)) return;
         renderBuilder();
         return;
       }
@@ -485,7 +454,7 @@
           cfg.customPages[pi].blocks[bi3].items = cfg.customPages[pi].blocks[bi3].items.filter(function (it) {
             return it.id !== itemId;
           });
-          SC.saveSiteConfigLocal(cfg);
+          if (!saveConfig(cfg)) return;
           renderBuilder();
         }
         return;
@@ -494,24 +463,19 @@
 
     $('#builderSaveDraft')?.addEventListener('click', function () {
       var cfg = collectConfigFromForm();
-      collectPagesFromDom(cfg);
-      SC.saveSiteConfigLocal(cfg);
-      SC.setDraftEnabled(true);
-      if (S && S.setDraftEnabled) S.setDraftEnabled(true);
+      if (!saveConfig(cfg)) return;
       applySiteChanges();
       showToast('Черновик сохранён — видите только вы');
     });
 
     $('#builderDownloadConfig')?.addEventListener('click', function () {
       var cfg = collectConfigFromForm();
-      collectPagesFromDom(cfg);
       SC.downloadSiteConfigJson(cfg);
       showToast('site-config.json скачан');
     });
 
     $('#builderDownloadAll')?.addEventListener('click', function () {
       var cfg = collectConfigFromForm();
-      collectPagesFromDom(cfg);
       SC.downloadSiteConfigJson(cfg);
       if (S) {
         S.downloadContentJson(S.getContentData());

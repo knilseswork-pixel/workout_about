@@ -241,7 +241,7 @@
     const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, { headers });
     if (!res.ok) return null;
     const json = await res.json();
-    return json.record || null;
+    return json.record || json;
   }
 
   async function loadContent() {
@@ -257,65 +257,28 @@
       try {
         var res = await fetch(urls[u], { cache: 'no-store' });
         if (!res.ok) continue;
-        serverData = await res.json();
-        contentData = serverData;
+        const data = await res.json();
+        if (Array.isArray(data?.articles)) serverData = data;
       } catch (e) {
         loadError = e;
       }
     }
 
-    if (!serverData && window.WORKOUT_CONTENT && window.WORKOUT_CONTENT.articles) {
-      serverData = window.WORKOUT_CONTENT;
-      contentData = serverData;
-      loadError = null;
+    const draft = window.SiteConfigStore.readDraft('content', serverData, (data) => Array.isArray(data?.articles));
+    const jsonBinSettings = getJsonBinSettings();
+    let cloudData = null;
+    if (!draft && !serverData && jsonBinSettings.binId && jsonBinSettings.accessKey) {
+      const remote = await fetchJsonBin().catch(() => null);
+      if (Array.isArray(remote?.articles)) cloudData = remote;
     }
+    contentData = draft || serverData || cloudData || cloneData(window.WORKOUT_CONTENT || { site: {}, articles: [] });
 
-    if (!contentData) {
-      contentData = { site: {}, articles: [] };
-    }
-
-    var useDraft =
-      window.SiteConfigStore && window.SiteConfigStore.isDraftEnabled
-        ? window.SiteConfigStore.isDraftEnabled()
-        : localStorage.getItem('workout_site_draft_enabled') === '1';
-
-    if (useDraft) {
-      var local = localStorage.getItem(STORAGE_CONTENT);
-      if (local) {
-        try {
-          var parsed = JSON.parse(local);
-          if (parsed && parsed.articles && parsed.articles.length) {
-            contentData = parsed;
-          } else {
-            localStorage.removeItem(STORAGE_CONTENT);
-          }
-        } catch (err) {
-          localStorage.removeItem(STORAGE_CONTENT);
-        }
-      }
-    } else {
-      localStorage.removeItem(STORAGE_CONTENT);
-    }
-
-    var jsonBinSettings = getJsonBinSettings();
-    if (jsonBinSettings.binId && jsonBinSettings.accessKey) {
-      var remote = await fetchJsonBin();
-      if (remote && remote.articles && remote.articles.length) {
-        contentData = remote;
-      }
-    }
-
-    if (!contentData || !contentData.articles || !contentData.articles.length) {
-      if (serverData && serverData.articles && serverData.articles.length) {
-        contentData = serverData;
-      }
-    }
-
-    if (!contentData || !contentData.articles || !contentData.articles.length) {
+    if (!draft && !serverData && !cloudData && !window.WORKOUT_CONTENT) {
       window.Workout = window.Workout || {};
       window.Workout.loadError = loadError;
     }
 
+    if (contentData.schemaVersion >= 1) return contentData;
     ensureHubArticles(serverData);
     migrateSectionsToArticles();
     mergeLegacyHubArticles();
@@ -472,22 +435,13 @@
   }
 
   function saveContentLocal(data) {
-    contentData = data;
-    ensureHubArticles(window.WORKOUT_CONTENT || null);
-    if (window.SiteConfigStore && window.SiteConfigStore.setDraftEnabled) {
-      window.SiteConfigStore.setDraftEnabled(true);
-    }
-    localStorage.setItem(STORAGE_CONTENT, JSON.stringify(contentData));
+    const snapshot = { ...data, schemaVersion: 1 };
+    window.SiteConfigStore.saveDraft('content', snapshot);
+    contentData = snapshot;
   }
 
   function clearContentLocal() {
     localStorage.removeItem(STORAGE_CONTENT);
-  }
-
-  function setDraftEnabled(value) {
-    if (window.SiteConfigStore && window.SiteConfigStore.setDraftEnabled) {
-      window.SiteConfigStore.setDraftEnabled(value);
-    }
   }
 
   async function publishToJsonBin(data) {
@@ -524,7 +478,7 @@
       reader.onload = () => {
         try {
           const data = JSON.parse(reader.result);
-          if (!data.articles) throw new Error('Неверный формат');
+          if (!Array.isArray(data?.articles)) throw new Error('Неверный формат');
           saveContentLocal(data);
           resolve(data);
         } catch (err) {
@@ -567,6 +521,5 @@
     importContentFromFile,
     slugId,
     assetUrl,
-    setDraftEnabled,
   };
 })();

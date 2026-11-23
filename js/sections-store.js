@@ -2,7 +2,6 @@
  * Хранение разделов (sections.json)
  */
 (function () {
-  var STORAGE_SECTIONS = 'workout_sections_data';
   var sectionsData = null;
 
   function assetUrl(path) {
@@ -16,38 +15,17 @@
     for (var i = 0; i < urls.length && !serverData; i++) {
       try {
         var res = await fetch(urls[i], { cache: 'no-store' });
-        if (res.ok) serverData = await res.json();
+        if (res.ok) {
+          var data = await res.json();
+          if (Array.isArray(data?.sections)) serverData = data;
+        }
       } catch (e) {
         /* next */
       }
     }
 
-    if (!serverData && window.WORKOUT_SECTIONS) {
-      serverData = window.WORKOUT_SECTIONS;
-    }
-
-    sectionsData = serverData || { sections: [] };
-
-    var useDraft =
-      window.SiteConfigStore && window.SiteConfigStore.isDraftEnabled
-        ? window.SiteConfigStore.isDraftEnabled()
-        : false;
-
-    if (useDraft) {
-      var local = localStorage.getItem(STORAGE_SECTIONS);
-      if (local) {
-        try {
-          var parsed = JSON.parse(local);
-          if (parsed && parsed.sections && parsed.sections.length) {
-            sectionsData = parsed;
-          }
-        } catch (e) {
-          localStorage.removeItem(STORAGE_SECTIONS);
-        }
-      }
-    } else {
-      localStorage.removeItem(STORAGE_SECTIONS);
-    }
+    var draft = window.SiteConfigStore.readDraft('sections', serverData, (data) => Array.isArray(data?.sections));
+    sectionsData = draft || serverData || JSON.parse(JSON.stringify(window.WORKOUT_SECTIONS || { sections: [] }));
 
     if (window.SectionsGroups && window.SectionsGroups.migrateSectionsData) {
       sectionsData = window.SectionsGroups.migrateSectionsData(sectionsData);
@@ -61,11 +39,8 @@
   }
 
   function saveSectionsLocal(data) {
+    window.SiteConfigStore.saveDraft('sections', data);
     sectionsData = data;
-    if (window.SiteConfigStore && window.SiteConfigStore.setDraftEnabled) {
-      window.SiteConfigStore.setDraftEnabled(true);
-    }
-    localStorage.setItem(STORAGE_SECTIONS, JSON.stringify(data));
   }
 
   function downloadSectionsJson(data) {

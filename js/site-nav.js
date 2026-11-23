@@ -8,11 +8,7 @@
     return (root || document).querySelector(sel);
   }
 
-  function escapeHtml(s) {
-    var d = document.createElement('div');
-    d.textContent = s == null ? '' : String(s);
-    return d.innerHTML;
-  }
+  const escapeHtml = window.WorkoutMedia.escapeHtml;
 
   function textToHtml(text) {
     return escapeHtml(text).replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>');
@@ -77,7 +73,7 @@
 
   function renderCustomPage(page) {
     var html = '<p class="sections-intro">' + escapeHtml(page.intro || '') + '</p>';
-    (page.blocks || []).forEach(function (block) {
+    (page.blocks || []).forEach(function (block, index) {
       if (block.type === 'text') {
         html +=
           '<div class="content-block"><h3 class="content-block__title">' +
@@ -86,7 +82,8 @@
           (block.body || []).map(function (p) {
             return '<p>' + textToHtml(p) + '</p>';
           }).join('') +
-          '</div></div>';
+          '</div>' + window.renderWorkoutPhotos(block) +
+          (block.videos || []).map(window.renderVideoBlock).join('') + '</div>';
       }
       if (block.type === 'hub') {
         var btns = (block.items || [])
@@ -101,7 +98,7 @@
           })
           .join('');
         html +=
-          '<div class="content-block content-block--group"><h3 class="content-block__title">' +
+          '<div class="content-block content-block--group" data-block-index="' + index + '"><h3 class="content-block__title">' +
           escapeHtml(block.title || 'Раздел') +
           '</h3><div class="gpp-groups hub-topics">' +
           btns +
@@ -114,10 +111,7 @@
   function bindCustomPageInteractions(root, page) {
     root.querySelectorAll('.content-block--group').forEach(function (groupEl) {
       var detail = groupEl.querySelector('.custom-hub-detail');
-      var blockTitle = groupEl.querySelector('.content-block__title');
-      var block = (page.blocks || []).find(function (b) {
-        return b.type === 'hub' && b.title === (blockTitle && blockTitle.textContent);
-      });
+      var block = (page.blocks || [])[Number(groupEl.dataset.blockIndex)];
       if (!block) return;
       groupEl.querySelectorAll('.custom-hub-item').forEach(function (btn) {
         btn.addEventListener('click', function () {
@@ -130,6 +124,7 @@
             '<button type="button" class="gpp-back custom-hub-back">← Назад</button><h3>' +
             escapeHtml(item.title) +
             '</h3>' +
+            window.renderWorkoutPhotos(item) +
             (item.body || []).map(function (p) {
               return '<p>' + textToHtml(p) + '</p>';
             }).join('') +
@@ -208,8 +203,7 @@
     });
   }
 
-  async function init() {
-    await SC.loadSiteConfig();
+  function init() {
     applyHero();
     renderMainTabs();
     renderFilters();

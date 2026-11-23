@@ -3,47 +3,8 @@
  * Поле: subSections (и items — синоним для материалов).
  */
 (function () {
-  function escapeHtml(s) {
-    var d = document.createElement('div');
-    d.textContent = s == null ? '' : String(s);
-    return d.innerHTML;
-  }
-
-  function formatVideosForEditor(videos) {
-    return (videos || [])
-      .map(function (v) {
-        return (v.title || 'Видео') + ' | ' + (v.embed || v.src || '');
-      })
-      .join('\n');
-  }
-
-  function parseVideosFromEditor(text) {
-    var lines = String(text || '')
-      .split('\n')
-      .map(function (l) {
-        return l.trim();
-      })
-      .filter(Boolean);
-    return lines.map(function (line, i) {
-      var title = 'Видео ' + (i + 1);
-      var url = line;
-      if (line.indexOf('|') !== -1) {
-        var parts = line.split('|');
-        title = parts[0].trim() || title;
-        url = parts.slice(1).join('|').trim();
-      }
-      var iframe = url.match(/src=["']([^"']+)["']/i);
-      if (iframe) url = iframe[1];
-      if (window.WorkoutMedia && window.WorkoutMedia.isDriveUrl(url)) {
-        var norm = window.WorkoutMedia.normalizeVideo(url);
-        if (norm.type === 'embed') return { title: title, embed: norm.url };
-      }
-      if (/vk\.com|youtube|youtu\.be/i.test(url)) {
-        return { title: title, embed: url };
-      }
-      return { title: title, src: url };
-    });
-  }
+  var attachments = window.WorkoutAttachments;
+  const escapeHtml = window.WorkoutMedia.escapeHtml;
 
   function normalizeItem(sub, idFn) {
     var id =
@@ -54,6 +15,7 @@
       title: sub.title || 'Подраздел',
       body: Array.isArray(sub.body) ? sub.body : sub.body ? [String(sub.body)] : [],
       videos: Array.isArray(sub.videos) ? sub.videos : [],
+      photos: attachments.photos(sub),
     };
   }
 
@@ -102,10 +64,7 @@
           '<textarea class="hub-item-body" rows="3">' +
           escapeHtml((item.body || []).join('\n\n')) +
           '</textarea></label>' +
-          '<label class="admin-field">Видео <span class="label-hint">Название | ссылка VK / Drive</span>' +
-          '<textarea class="hub-item-videos" rows="2">' +
-          escapeHtml(formatVideosForEditor(item.videos || [])) +
-          '</textarea></label>' +
+          attachments.renderEditor(item) +
           '</div>'
         );
       })
@@ -118,7 +77,6 @@
     rootEl.querySelectorAll('.admin-hub-item').forEach(function (el) {
       var titleEl = el.querySelector('.hub-item-title');
       var bodyEl = el.querySelector('.hub-item-body');
-      var videosEl = el.querySelector('.hub-item-videos');
       list.push({
         id: el.getAttribute('data-hub-id') || 'hub-' + Date.now(),
         title: titleEl ? titleEl.value.trim() || 'Подраздел' : 'Подраздел',
@@ -128,7 +86,7 @@
             return p.trim();
           })
           .filter(Boolean),
-        videos: parseVideosFromEditor(videosEl ? videosEl.value : ''),
+        ...attachments.collectEditor(el),
       });
     });
     return list;
@@ -207,7 +165,6 @@
     scopeRoot.querySelectorAll('[data-hub-mount]').forEach(function (el) {
       var id = el.getAttribute('data-hub-mount');
       if (!id) return;
-      el.dataset.hubBound = '';
       mount(el, store[id] || []);
     });
   }
@@ -217,8 +174,6 @@
     mountAll: mountAll,
     collectFromRoot: collectFromRoot,
     collectAll: collectAll,
-    formatVideosForEditor: formatVideosForEditor,
-    parseVideosFromEditor: parseVideosFromEditor,
     getList: getList,
     hasSubSections: hasSubSections,
     ensureOn: ensureOn,

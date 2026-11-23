@@ -3,6 +3,7 @@
  */
 (function () {
   var SS = window.SectionsStore;
+  var attachments = window.WorkoutAttachments;
   var editingSectionId = null;
   var editingItemId = null;
   var editingSectionTemplate = null;
@@ -13,11 +14,7 @@
     return (root || document).querySelector(sel);
   }
 
-  function escapeHtml(s) {
-    var d = document.createElement('div');
-    d.textContent = s == null ? '' : String(s);
-    return d.innerHTML;
-  }
+  const escapeHtml = window.WorkoutMedia.escapeHtml;
 
   function showToast(msg) {
     var t = $('#adminToast');
@@ -27,42 +24,6 @@
     setTimeout(function () {
       t.classList.remove('is-visible');
     }, 2800);
-  }
-
-  function formatVideosForEditor(videos) {
-    return (videos || [])
-      .map(function (v) {
-        return (v.title || 'Видео') + ' | ' + (v.embed || v.src || '');
-      })
-      .join('\n');
-  }
-
-  function parseVideosFromEditor(text) {
-    var lines = String(text || '')
-      .split('\n')
-      .map(function (l) {
-        return l.trim();
-      })
-      .filter(Boolean);
-    return lines.map(function (line, i) {
-      var title = 'Видео ' + (i + 1);
-      var url = line;
-      if (line.indexOf('|') !== -1) {
-        var parts = line.split('|');
-        title = parts[0].trim() || title;
-        url = parts.slice(1).join('|').trim();
-      }
-      var iframe = url.match(/src=["']([^"']+)["']/i);
-      if (iframe) url = iframe[1];
-      if (window.WorkoutMedia && window.WorkoutMedia.isDriveUrl(url)) {
-        var norm = window.WorkoutMedia.normalizeVideo(url);
-        if (norm.type === 'embed') return { title: title, embed: norm.url };
-      }
-      if (/vk\.com|youtube|youtu\.be/i.test(url)) {
-        return { title: title, embed: url };
-      }
-      return { title: title, src: url };
-    });
   }
 
   function renderSectionsAdminList() {
@@ -159,6 +120,7 @@
       '<textarea data-f="body" rows="3">' +
       escapeHtml(block.body || '') +
       '</textarea></label>' +
+      attachments.renderEditor(block) +
       nestedSubsForEntity(block, 'cb') +
       '</div>'
     );
@@ -178,12 +140,13 @@
         return f ? f.value.trim() : '';
       }
       var cbId = el.getAttribute('data-cb-id') || (SG ? SG.uniqueId('cb') : 'cb-' + Date.now());
-      var mount = el.querySelector('[data-hub-mount="cb-' + cbId + '"]');
+      var mount = el.querySelector('[data-hub-mount="cb-' + CSS.escape(cbId) + '"]');
       var subSections = mount && window.WorkoutHubItemsEditor ? window.WorkoutHubItemsEditor.collectFromRoot(mount) : [];
       list.push({
         id: cbId,
         title: val('title') || 'Блок',
         body: val('body'),
+        ...attachments.collectEditor(el),
         subSections: subSections,
       });
     });
@@ -300,10 +263,7 @@
       '<label class="admin-field">Страховка<textarea data-f="spotting" rows="2">' +
       escapeHtml(ex.spotting || '') +
       '</textarea></label>' +
-      '<label class="admin-field">Видео <span class="label-hint">Название | ссылка VK / Drive</span>' +
-      '<textarea data-f="videos" rows="2">' +
-      escapeHtml(formatVideosForEditor(ex.videos || [])) +
-      '</textarea></label>' +
+      attachments.renderEditor(ex) +
       nestedSubsForEntity(ex, 'el') +
       '</div>'
     );
@@ -322,9 +282,8 @@
         var el = block.querySelector('[data-f="' + name + '"]');
         return el ? el.value.trim() : '';
       }
-      var videosEl = block.querySelector('[data-f="videos"]');
       var elId = block.getAttribute('data-el-id') || (SG ? SG.uniqueId('el') : 'el-' + Date.now());
-      var elMount = block.querySelector('[data-hub-mount="el-' + elId + '"]');
+      var elMount = block.querySelector('[data-hub-mount="el-' + CSS.escape(elId) + '"]');
       list.push({
         id: elId,
         title: val('title') || 'Элемент',
@@ -333,7 +292,7 @@
         principle: val('principle'),
         errors: val('errors'),
         spotting: val('spotting'),
-        videos: parseVideosFromEditor(videosEl ? videosEl.value : ''),
+        ...attachments.collectEditor(block),
         subSections:
           elMount && window.WorkoutHubItemsEditor ? window.WorkoutHubItemsEditor.collectFromRoot(elMount) : [],
       });
@@ -401,6 +360,7 @@
               '<label class="admin-field">Ошибки<textarea data-f="errors" rows="2">' +
               escapeHtml(ex.errors) +
               '</textarea></label>' +
+              attachments.renderEditor(ex) +
               nestedSubsForEntity(ex, 'ex') +
               '</div>'
             );
@@ -443,7 +403,7 @@
           return el ? el.value.trim() : '';
         }
         var exId = exBlock.getAttribute('data-ex-id') || (SG ? SG.uniqueId('ex') : 'ex-' + Date.now());
-        var exMount = exBlock.querySelector('[data-hub-mount="ex-' + exId + '"]');
+        var exMount = exBlock.querySelector('[data-hub-mount="ex-' + CSS.escape(exId) + '"]');
         g.exercises.push({
           id: exId,
           title: val('title') || 'Упражнение',
@@ -451,6 +411,7 @@
           goal: val('goal'),
           principle: val('principle'),
           errors: val('errors'),
+          ...attachments.collectEditor(exBlock),
           subSections:
             exMount && window.WorkoutHubItemsEditor ? window.WorkoutHubItemsEditor.collectFromRoot(exMount) : [],
         });
@@ -564,7 +525,7 @@
 
     if (titleEl) titleEl.textContent = sec.title + ' → ' + item.title;
 
-    var html = field('Фото (путь, или ссылка Google Drive «Поделиться»)', 'secPhoto', item.photo || '', 0);
+    var html = '<div id="secAttachments">' + attachments.renderEditor(item) + '</div>';
     var usesGroups = window.SectionsGroups && window.SectionsGroups.templateUsesMuscleGroups(tpl);
 
     html += subSectionsEditorSection();
@@ -655,8 +616,8 @@
     var item = JSON.parse(JSON.stringify(found.item));
     var tpl = found.section.template;
 
-    var photoEl = $('#secPhoto');
-    if (photoEl) item.photo = photoEl.value.trim();
+    Object.assign(item, attachments.collectEditor($('#secAttachments')));
+    delete item.photo;
     item.subSections = sectionHubEditor ? sectionHubEditor.collect() : [];
     if (window.WorkoutHubItemsEditor) window.WorkoutHubItemsEditor.syncItemsAlias(item);
     item.contentBlocks = collectContentBlocksFromDom($('#secContentBlocksRoot'));
@@ -668,11 +629,9 @@
       item.spotting = ($('#secSpotting') || {}).value || '';
       item.elements = collectDynamicElementsFromDom($('#secElementsRoot'));
       delete item.groups;
-      delete item.videos;
     } else if (window.SectionsGroups && window.SectionsGroups.templateUsesMuscleGroups(tpl)) {
       item.description = ($('#secDescription') || {}).value || '';
       item.groups = collectGroupsFromDom($('#secGroupsRoot'));
-      delete item.videos;
       delete item.elements;
     } else if (tpl === 'simple-block') {
       item.description = ($('#secDescription') || {}).value || '';
@@ -686,7 +645,7 @@
     var item = collectSectionEditorData();
     if (!item) return;
 
-    var data = SS.getSectionsData();
+    var data = structuredClone(SS.getSectionsData());
     var sec = data.sections.find(function (s) {
       return s.id === editingSectionId;
     });
@@ -696,10 +655,15 @@
     });
     if (idx < 0) return;
     sec.items[idx] = item;
-    SS.saveSectionsLocal(data);
+    try {
+      SS.saveSectionsLocal(data);
+    } catch (error) {
+      showToast(error.message);
+      return;
+    }
     window.dispatchEvent(new CustomEvent('sections-updated'));
     renderSectionsAdminList();
-    showToast('Раздел сохранён');
+    showToast('Черновик раздела сохранён в этом браузере');
   }
 
   function bindSectionAdminEvents() {
@@ -719,7 +683,7 @@
       reader.onload = function () {
         try {
           var parsed = JSON.parse(reader.result);
-          if (!parsed.sections) throw new Error('bad');
+          if (!Array.isArray(parsed?.sections)) throw new Error('Неверный формат');
           SS.saveSectionsLocal(parsed);
           window.dispatchEvent(new CustomEvent('sections-updated'));
           renderSectionsAdminList();

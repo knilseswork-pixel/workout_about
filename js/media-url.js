@@ -2,6 +2,30 @@
  * Нормализация ссылок на медиа (Google Drive и др.)
  */
 (function () {
+  const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (char) => entities[char]);
+  }
+
+  function httpUrl(value) {
+    try {
+      const url = new URL(value);
+      if ((url.protocol === 'https:' || url.protocol === 'http:') && !url.username && !url.password) return url;
+    } catch (error) {
+      return null;
+    }
+    return null;
+  }
+
+  function resolveUrl(value) {
+    const path = String(value || '').trim();
+    const url = httpUrl(path);
+    if (url) return url.href;
+    if (!path || /^[a-z][a-z0-9+.-]*:|^[/\\]{2}|[\\\u0000-\u001f]/i.test(path)) return '';
+    return window.Workout.assetUrl(path);
+  }
+
   function extractDriveId(url) {
     if (!url) return null;
     var s = String(url);
@@ -15,7 +39,7 @@
   }
 
   function isDriveUrl(url) {
-    return /drive\.google\.com/i.test(url || '');
+    return httpUrl(url)?.hostname === 'drive.google.com';
   }
 
   function driveImageUrl(id) {
@@ -68,15 +92,31 @@
    */
   function normalizeVideo(url) {
     var s = String(url || '').trim();
-    if (!s) return { type: 'src', url: s };
-    if (!isDriveUrl(s)) return { type: 'src', url: s };
-    var id = extractDriveId(s);
-    if (!id) return { type: 'src', url: s };
-    return {
-      type: 'embed',
-      url: driveVideoPreviewUrl(id),
-      openUrl: driveVideoViewUrl(id),
-    };
+    var parsed = httpUrl(s);
+    if (!parsed) return { type: 'src', url: s };
+    var host = parsed.hostname.replace(/^(www\.|m\.)/, '');
+    if (host === 'drive.google.com') {
+      var driveId = extractDriveId(s);
+      if (driveId) return { type: 'embed', url: driveVideoPreviewUrl(driveId), openUrl: driveVideoViewUrl(driveId), provider: 'drive' };
+    }
+    if (host === 'youtube.com' || host === 'youtube-nocookie.com' || host === 'youtu.be') {
+      var parts = parsed.pathname.split('/');
+      var youtubeId = host === 'youtu.be' || ['embed', 'shorts', 'live'].includes(parts[1])
+        ? parts[host === 'youtu.be' ? 1 : 2] : parsed.searchParams.get('v');
+      if (/^[\w-]{11}$/.test(youtubeId || '')) {
+        return { type: 'embed', url: 'https://www.youtube-nocookie.com/embed/' + youtubeId,
+          openUrl: 'https://www.youtube.com/watch?v=' + youtubeId, provider: 'youtube' };
+      }
+    }
+    if (host === 'vk.com' || host === 'vk.ru' || host === 'vkvideo.ru') {
+      if (parsed.pathname === '/video_ext.php') return { type: 'embed', url: parsed.href, provider: 'vk' };
+      var vkId = (parsed.searchParams.get('z') || parsed.pathname).match(/^\/?video(-?\d+)_(\d+)/);
+      if (vkId) {
+        return { type: 'embed', url: 'https://vk.com/video_ext.php?oid=' + vkId[1] + '&id=' + vkId[2],
+          openUrl: 'https://vk.com/video' + vkId[1] + '_' + vkId[2], provider: 'vk' };
+      }
+    }
+    return { type: 'src', url: s };
   }
 
   function driveOpenUrl(url) {
@@ -85,6 +125,8 @@
   }
 
   window.WorkoutMedia = {
+    escapeHtml: escapeHtml,
+    resolveUrl: resolveUrl,
     extractDriveId: extractDriveId,
     isDriveUrl: isDriveUrl,
     normalizeImageUrl: normalizeImageUrl,

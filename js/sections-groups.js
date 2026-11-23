@@ -54,13 +54,15 @@
           errors: ex.errors || '',
           spotting: ex.spotting || '',
           videos: Array.isArray(ex.videos) ? ex.videos : [],
+          photos: window.WorkoutAttachments.photos(ex),
+          subSections: ex.subSections || ex.items,
         };
         ensureSubSections(el);
         return el;
       });
     } else if (item.groups && item.groups.length) {
       item.elements = flattenGroupsToElements(item);
-    } else if (item.videos && item.videos.length) {
+    } else if (!Array.isArray(item.elements) && item.videos && item.videos.length) {
       item.elements = [
         {
           id: uniqueId('el'),
@@ -73,11 +75,11 @@
           videos: item.videos.slice(),
         },
       ];
+      delete item.videos;
     } else {
       item.elements = [];
     }
     delete item.groups;
-    delete item.videos;
     return item;
   }
 
@@ -88,7 +90,7 @@
       exercises: Array.isArray(g.exercises) ? g.exercises : [],
     };
 
-    if (!group.exercises.length && (g.description || g.goal || g.photo || g.principle || g.errors)) {
+    if (!Array.isArray(g.exercises) && (g.description || g.goal || g.photo || g.principle || g.errors || g.videos?.length)) {
       group.exercises.push({
         id: uniqueId('ex'),
         title: g.label || 'Упражнение',
@@ -96,6 +98,8 @@
         goal: g.goal || '',
         principle: g.principle || '',
         errors: g.errors || '',
+        photos: window.WorkoutAttachments.photos(g),
+        videos: g.videos || [],
       });
     }
 
@@ -103,7 +107,7 @@
   }
 
   function ensureItemMuscleGroups(item) {
-    if (!item.groups || !item.groups.length) {
+    if (!Array.isArray(item.groups)) {
       item.groups = defaultMuscleGroups();
       return item;
     }
@@ -149,6 +153,8 @@
         id: b.id || uniqueId('cb'),
         title: b.title || 'Блок',
         body: b.body != null ? String(b.body) : '',
+        photos: window.WorkoutAttachments.photos(b),
+        videos: Array.isArray(b.videos) ? b.videos : [],
       };
       ensureSubSections(b);
       if (b.subSections && b.subSections.length) block.subSections = b.subSections;

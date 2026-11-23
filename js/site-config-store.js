@@ -4,7 +4,11 @@
 (function () {
   var STORAGE_CONFIG = 'workout_site_config_data';
   var STORAGE_DRAFT = 'workout_site_draft_enabled';
-  var STORAGE_CONFIG_VERSION = 'workout_site_config_server_version';
+  var draftKeys = {
+    siteConfig: STORAGE_CONFIG,
+    content: 'workout_content_data',
+    sections: 'workout_sections_data',
+  };
 
   var siteConfig = null;
 
@@ -17,12 +21,42 @@
   }
 
   function isDraftEnabled() {
-    return localStorage.getItem(STORAGE_DRAFT) === '1';
+    try {
+      return Object.values(draftKeys).some((key) => localStorage.getItem(key));
+    } catch (error) {
+      return false;
+    }
   }
 
-  function setDraftEnabled(value) {
-    if (value) localStorage.setItem(STORAGE_DRAFT, '1');
-    else localStorage.removeItem(STORAGE_DRAFT);
+  function readDraft(key, serverData, validate) {
+    try {
+      var raw = localStorage.getItem(draftKeys[key]);
+      if (!raw) return null;
+      var data = JSON.parse(raw);
+      if (!validate(data)) return null;
+      if (serverData && raw === JSON.stringify(serverData)) {
+        localStorage.removeItem(draftKeys[key]);
+        return null;
+      }
+      return data;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function saveDraft(key, data) {
+    try {
+      localStorage.setItem(draftKeys[key], JSON.stringify(data));
+    } catch (error) {
+      throw new Error('Не удалось записать черновик в браузер. Проверьте доступ и свободное место.');
+    }
+  }
+
+  function getDraftFiles() {
+    return Object.fromEntries(Object.entries(draftKeys)
+      .map(([key, name]) => [key, localStorage.getItem(name)])
+      .filter(([, raw]) => raw)
+      .map(([key, raw]) => [key, JSON.parse(raw)]));
   }
 
   function getDefaultConfig() {
@@ -46,31 +80,19 @@
     for (var i = 0; i < urls.length && !serverData; i++) {
       try {
         var res = await fetch(urls[i], { cache: 'no-store' });
-        if (res.ok) serverData = await res.json();
+        if (res.ok) {
+          var data = await res.json();
+          if (Array.isArray(data?.mainTabs) && Array.isArray(data?.materialFilters) && Array.isArray(data?.customPages)) {
+            serverData = data;
+          }
+        }
       } catch (e) {
         /* next */
       }
     }
 
-    if (!serverData) serverData = getDefaultConfig();
-
-    siteConfig = clone(serverData);
-    localStorage.setItem(STORAGE_CONFIG_VERSION, String(serverData.version || 1));
-
-    if (isDraftEnabled()) {
-      var local = localStorage.getItem(STORAGE_CONFIG);
-      if (local) {
-        try {
-          var parsed = JSON.parse(local);
-          if (parsed && parsed.mainTabs) siteConfig = parsed;
-        } catch (e) {
-          localStorage.removeItem(STORAGE_CONFIG);
-        }
-      }
-    } else {
-      localStorage.removeItem(STORAGE_CONFIG);
-    }
-
+    siteConfig = readDraft('siteConfig', serverData, (data) => Array.isArray(data?.mainTabs))
+      || serverData || getDefaultConfig();
     return siteConfig;
   }
 
@@ -79,9 +101,8 @@
   }
 
   function saveSiteConfigLocal(data) {
+    saveDraft('siteConfig', data);
     siteConfig = data;
-    setDraftEnabled(true);
-    localStorage.setItem(STORAGE_CONFIG, JSON.stringify(data));
   }
 
   function clearSiteConfigLocal() {
@@ -117,9 +138,11 @@
     downloadSiteConfigJson: downloadSiteConfigJson,
     getCategories: getCategories,
     isDraftEnabled: isDraftEnabled,
-    setDraftEnabled: setDraftEnabled,
+    readDraft: readDraft,
+    saveDraft: saveDraft,
+    getDraftFiles: getDraftFiles,
     clearAllDrafts: function () {
-      setDraftEnabled(false);
+      localStorage.removeItem(STORAGE_DRAFT);
       clearSiteConfigLocal();
       localStorage.removeItem('workout_content_data');
       localStorage.removeItem('workout_sections_data');

@@ -2,17 +2,14 @@
  * Отображение больших разделов (Статические, Динамические, ОФП…)
  */
 (function () {
+  var attachments = window.WorkoutAttachments;
   var SS = window.SectionsStore;
 
   function $(sel, root) {
     return (root || document).querySelector(sel);
   }
 
-  function escapeHtml(s) {
-    var d = document.createElement('div');
-    d.textContent = s == null ? '' : String(s);
-    return d.innerHTML;
-  }
+  const escapeHtml = window.WorkoutMedia.escapeHtml;
 
   function assetUrl(path) {
     if (!path) return '';
@@ -20,8 +17,7 @@
     if (window.WorkoutMedia && window.WorkoutMedia.isDriveUrl(s)) {
       s = window.WorkoutMedia.normalizeImageUrl(s);
     }
-    if (/^https?:\/\//i.test(s)) return s;
-    return window.Workout && window.Workout.assetUrl ? window.Workout.assetUrl(s) : s;
+    return attachments.assetUrl(s);
   }
 
   function renderPhotoImg(photoUrl, alt) {
@@ -59,23 +55,13 @@
       }
     }
     var src = assetUrl(raw);
+    if (!src) return '';
     var attrs =
       'class="item-photo" src="' +
       escapeHtml(src) +
       '" alt="' +
       escapeHtml(alt || '') +
       '" loading="lazy"';
-    if (window.WorkoutMedia && window.WorkoutMedia.isDriveUrl(raw)) {
-      var driveUrls = window.WorkoutMedia.getDriveImageUrls(raw);
-      if (driveUrls) {
-        var chain = [driveUrls.fallback, driveUrls.fallback2].filter(Boolean);
-        if (chain.length) {
-          attrs += ' data-drive-fb="' + escapeHtml(chain.join('|')) + '"';
-          attrs +=
-            ' onerror="var p=this.dataset.driveFb;if(!p){return}var a=p.split(\'|\');var n=parseInt(this.dataset.driveFi||\'0\',10);if(n<a.length){this.dataset.driveFi=String(n+1);this.src=a[n]}else{this.classList.add(\'item-photo--broken\')}"';
-        }
-      }
-    }
     return (
       '<button type="button" class="photo-zoom-trigger" data-media-zoom="img" data-img-src="' +
       escapeHtml(src) +
@@ -89,6 +75,13 @@
       '</button>'
     );
   }
+
+  function renderPhotos(item) {
+    const html = attachments.photos(item).map((photo) => renderPhotoImg(photo, item.title)).join('');
+    return html ? '<div class="item-photo-wrap">' + html + '</div>' : '';
+  }
+
+  window.renderWorkoutPhotos = renderPhotos;
 
   function hasContent(text) {
     return String(text || '').trim().length > 0;
@@ -131,7 +124,7 @@
 
   function itemPreview(item, template) {
     if (hasContent(item.description)) return item.description.slice(0, 120) + '…';
-    if (item.photo) return 'Есть фото';
+    if (attachments.photos(item).length) return 'Есть фото';
     if (template === 'dynamic-level') {
       var els = item.elements || [];
       if (els.length) return els.length + ' элементов';
@@ -165,7 +158,7 @@
       '</button>' +
       '<h3 class="gpp-exercise-detail__title">' +
       escapeHtml(ex.title) +
-      '</h3>';
+      '</h3>' + renderPhotos(ex) + renderVideos(ex.videos);
 
     if (hasSubSections(ex)) {
       html += renderSubSectionsUi(ex, ex.description || '');
@@ -173,9 +166,6 @@
       return html;
     }
 
-    if (tpl === 'dynamic-level' && ex.videos && ex.videos.length) {
-      html += renderVideos(ex.videos);
-    }
     html +=
       block('Описание', '<p>' + textToHtml(ex.description) + '</p>') +
       block('Цель', '<p>' + textToHtml(ex.goal) + '</p>') +
@@ -443,7 +433,7 @@
     if (!videos || !videos.length) return '';
     if (!window.renderVideoBlock) return '';
     return (
-      '<div class="content-block"><h3 class="content-block__title">Видео элемента</h3>' +
+      '<div class="content-block"><h3 class="content-block__title">Видео</h3>' +
       videos.map(window.renderVideoBlock).join('') +
       '</div>'
     );
@@ -454,7 +444,7 @@
     window.SectionsGroups.ensureContentBlocks(item);
     return (item.contentBlocks || [])
       .filter(function (b) {
-        return hasSubSections(b) || hasContent(b.body) || hasContent(b.title);
+        return hasSubSections(b) || hasContent(b.body) || hasContent(b.title) || attachments.photos(b).length || b.videos?.length;
       })
       .map(function (b) {
         if (hasSubSections(b)) {
@@ -465,11 +455,12 @@
             (hasContent(b.title)
               ? '<h3 class="content-block__title">' + escapeHtml(b.title) + '</h3>'
               : '') +
+            renderPhotos(b) + renderVideos(b.videos) +
             renderSubSectionsUi(b, b.body || '') +
             '</div>'
           );
         }
-        return block(b.title || 'Блок', '<p>' + textToHtml(b.body || '') + '</p>');
+        return block(b.title || 'Блок', '<p>' + textToHtml(b.body || '') + '</p>' + renderPhotos(b) + renderVideos(b.videos));
       })
       .join('');
   }
@@ -478,7 +469,7 @@
     if (!root || !item) return;
     (item.contentBlocks || []).forEach(function (b) {
       if (!hasSubSections(b)) return;
-      var el = root.querySelector('[data-cb-hub="' + b.id + '"]');
+      var el = root.querySelector('[data-cb-hub="' + CSS.escape(b.id) + '"]');
       if (el) bindSubSectionsUi(el, b);
     });
   }
@@ -497,9 +488,7 @@
     $('#detailTitle').textContent = item.title;
     $('#detailMeta').textContent = '';
 
-    if (item.photo) {
-      html += '<div class="item-photo-wrap">' + renderPhotoImg(item.photo, item.title) + '</div>';
-    }
+    html += renderPhotos(item) + renderVideos(item.videos);
 
     if (window.SectionsGroups) window.SectionsGroups.ensureSubSections(item);
     var subList = getSubList(item);
@@ -549,7 +538,7 @@
     if (gppRoot) bindGppLevelNav(gppRoot, item, tpl);
     $('#detailVideos').innerHTML = '';
     $('#detailVideos').hidden = true;
-    $('#detailMedia').innerHTML = item.photo
+    $('#detailMedia').innerHTML = attachments.photos(item).length
       ? ''
       : '<img src="' + assetUrl('logo.jpg') + '" alt="" class="detail__hero-logo" width="80" height="80">';
 
@@ -578,8 +567,7 @@
     if (view === 'sections') renderSectionsList();
   }
 
-  async function init() {
-    await SS.loadSections();
+  function init() {
     renderSectionsList();
     window.addEventListener('sections-updated', renderSectionsList);
   }

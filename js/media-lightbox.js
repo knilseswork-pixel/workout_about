@@ -93,7 +93,7 @@
       return;
     }
     if (kind === 'img') {
-      var src = el.getAttribute('data-img-src');
+      var src = el.querySelector('img')?.currentSrc || el.getAttribute('data-img-src');
       if (src) openImage(src, el.getAttribute('data-media-title') || '');
     }
   }
