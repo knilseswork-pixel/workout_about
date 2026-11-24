@@ -156,7 +156,7 @@
                 <option>Первая помощь</option>
               </select>
             </label>
-            <label id="editorBodyWrap">Текст статьи <span class="label-hint">если нет подразделов — один текст; иначе кратко в описании на карточке</span>
+            <label id="editorBodyWrap">Текст статьи <span class="label-hint">виден перед подразделами, если они добавлены</span>
               <textarea id="editorBody" rows="4"></textarea>
             </label>
             <section class="editor-subsections">
@@ -205,7 +205,7 @@
           <button type="button" class="admin-btn admin-btn--primary" id="adminPublishGitHub" style="font-size:1rem;padding:14px 20px">
             Опубликовать черновики в GitHub
           </button>
-          <p class="admin-help">После сохранения коммита GitHub Pages отдельно обновляет публичный сайт.</p>
+          <p class="admin-help">При открытии сайт запрашивает опубликованные данные из ветки main.</p>
           <hr class="admin-hr">
           <p class="admin-help">Или скачайте файлы вручную и загрузите сами:</p>
           <button type="button" class="admin-btn" id="adminDownloadConfig">Скачать site-config.json</button>
@@ -214,7 +214,6 @@
           <button type="button" class="admin-btn" id="adminImportSections">Импорт sections.json</button>
           <input type="file" id="adminImportSectionsFile" accept=".json" hidden>
           <button type="button" class="admin-btn admin-btn--danger" id="adminResetSections">Сбросить разделы (локально)</button>
-          <button type="button" class="admin-btn" id="adminPublishCloud">Опубликовать в облако</button>
           <button type="button" class="admin-btn" id="adminImport">Импорт из файла</button>
           <input type="file" id="adminImportFile" accept=".json" hidden>
           <button type="button" class="admin-btn admin-btn--danger" id="adminReset">Сбросить локальные изменения</button>
@@ -228,13 +227,6 @@
           <hr class="admin-hr">
 
           <p class="admin-help">Публикация в GitHub — вкладка <strong>«Публикация»</strong>: введите токен перед каждой отправкой.</p>
-          <hr class="admin-hr">
-
-          <h3>JSONBin (резервное облако)</h3>
-          <label>Bin ID<input type="text" id="jsonBinId" placeholder="6789abc..."></label>
-          <label>Access Key (чтение)<input type="text" id="jsonBinAccessKey"></label>
-          <label>Master Key (запись)<input type="password" id="jsonBinMasterKey"></label>
-          <button type="button" class="admin-btn" id="saveJsonBinSettings">Сохранить ключи</button>
         </div>
       </div>
     </div>
@@ -243,17 +235,14 @@
 
   <script>
     (function () {
-      var BUILD = '20261123a';
+      var BUILD = '20261124a';
       var scripts = [
         'js/media-url.js',
         'js/media-attachments.js',
         'js/media-lightbox.js',
         'js/hub-items-editor.js',
         'js/github-push.js',
-        'js/site-config-data.js',
-        'js/content-data.js',
         'js/level-sort.js',
-        'js/sections-data.js',
         'js/site-config-store.js',
         'js/content-store.js',
         'js/sections-groups.js',
