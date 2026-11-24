@@ -31,7 +31,7 @@
   }
 
   function getConfig() {
-    return SC.getSiteConfig() || { version: 1, site: {}, mainTabs: [], materialFilters: [], customPages: [] };
+    return SC.getEditableSiteConfig() || { version: 1, site: {}, mainTabs: [], materialFilters: [], customPages: [] };
   }
 
   function saveConfig(cfg) {
@@ -48,15 +48,15 @@
     var host = $('#siteBuilderRoot');
     if (!host) return;
     var cfg = getConfig();
-    var draft = SC.isDraftEnabled();
+    var draft = Boolean(SC.readDraft('siteConfig', (data) => Array.isArray(data?.mainTabs)));
 
     host.innerHTML =
       '<div class="builder-draft' +
       (draft ? ' builder-draft--on' : '') +
       '">' +
       (draft
-        ? '<p>⚠ Сейчас на этом устройстве показан <strong>черновик</strong>. Другие пользователи видят файлы с GitHub.</p>'
-        : '<p>Показываются данные с GitHub Pages. Сохранённые правки можно отправить через вкладку «Публикация».</p>') +
+        ? '<p>Вы редактируете черновик. Изменения появятся на сайте после публикации в GitHub.</p>'
+        : '<p>Конструктор загружен из GitHub. Сохраните правки и отправьте их через вкладку «Публикация».</p>') +
       '</div>' +
       '<section class="builder-section">' +
       '<h3>Версия сайта</h3>' +
@@ -96,10 +96,10 @@
       '<section class="builder-section builder-section--publish">' +
       '<h3>Публикация для всех</h3>' +
       '<ol class="builder-steps">' +
-      '<li>Нажмите «Сохранить черновик» — проверьте на сайте.</li>' +
+      '<li>Нажмите «Сохранить черновик».</li>' +
       '<li>Скачайте все JSON (кнопки ниже).</li>' +
       '<li>Замените файлы в папке <code>data/</code> на GitHub и сделайте push. Для новых вложений используйте вкладку «Публикация».</li>' +
-      '<li>Через 1–3 минуты обновление увидят все.</li>' +
+      '<li>При следующем открытии сайт запросит обновлённые данные с GitHub.</li>' +
       '</ol>' +
       '<button type="button" class="admin-btn admin-btn--primary" id="builderSaveDraft">Сохранить черновик на устройстве</button>' +
       '<button type="button" class="admin-btn admin-btn--primary" id="builderDownloadAll">Скачать все JSON для GitHub</button>' +
@@ -265,7 +265,7 @@
   }
 
   function collectConfigFromForm() {
-    var cfg = structuredClone(getConfig());
+    var cfg = getConfig();
     cfg.version = parseInt($('#builderVersion').value, 10) || 1;
     cfg.site = {
       heroBadge: $('#builderHeroBadge').value.trim(),
@@ -464,8 +464,8 @@
     $('#builderSaveDraft')?.addEventListener('click', function () {
       var cfg = collectConfigFromForm();
       if (!saveConfig(cfg)) return;
-      applySiteChanges();
-      showToast('Черновик сохранён — видите только вы');
+      renderBuilder();
+      showToast('Черновик сохранён в админке');
     });
 
     $('#builderDownloadConfig')?.addEventListener('click', function () {
@@ -478,49 +478,23 @@
       var cfg = collectConfigFromForm();
       SC.downloadSiteConfigJson(cfg);
       if (S) {
-        S.downloadContentJson(S.getContentData());
+        S.downloadContentJson();
         setTimeout(function () {
-          window.SectionsStore.downloadSectionsJson(window.SectionsStore.getSectionsData());
+          window.SectionsStore.downloadSectionsJson();
         }, 400);
       }
       showToast('Скачайте 3 файла в data/ на GitHub');
     });
 
-    $('#builderUseServer')?.addEventListener('click', async function () {
-      if (!confirm('Убрать черновик и загрузить данные с сайта?')) return;
-      SC.clearAllDrafts();
-      await SC.loadSiteConfig();
-      if (S) {
-        await S.loadContent();
-        if (window.SectionsStore) await window.SectionsStore.loadSections();
-      }
-      applySiteChanges();
+    $('#builderUseServer')?.addEventListener('click', function () {
+      if (!confirm('Сбросить черновик конструктора?')) return;
+      SC.clearDraft('siteConfig');
       renderBuilder();
-      showToast('Загружено с GitHub / встроенных файлов');
+      showToast('Черновик конструктора сброшен');
     });
-  }
-
-  function applySiteChanges() {
-    if (window.SiteNav) {
-      window.SiteNav.applyHero();
-      window.SiteNav.renderMainTabs();
-      window.SiteNav.renderFilters();
-      window.SiteNav.renderAllCustomViews();
-      window.SiteNav.setMainView('materials');
-    }
-    window.dispatchEvent(new CustomEvent('site-config-updated'));
-    if (window.WorkoutMain) {
-      window.WorkoutMain.renderCards();
-      window.WorkoutMain.populateCategorySelect();
-    }
   }
 
   window.SiteBuilder = {
     render: renderBuilder,
-    init: function () {
-      window.addEventListener('site-config-updated', function () {
-        /* noop — for other modules */
-      });
-    },
   };
 })();

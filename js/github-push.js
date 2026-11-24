@@ -4,8 +4,8 @@
  */
 (function () {
   var STORAGE_GH = 'workout_github_token';
-  var DEFAULT_REPO   = 'knilseswork-pixel/workout_about';
-  var DEFAULT_BRANCH = 'main';
+  var DEFAULT_REPO   = window.Workout.githubRepo;
+  var DEFAULT_BRANCH = window.Workout.githubBranch;
 
   var FILE_PATHS = {
     siteConfig : 'data/site-config.json',

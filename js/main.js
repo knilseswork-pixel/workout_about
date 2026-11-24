@@ -29,7 +29,6 @@
   });
   const S = window.WorkoutStore;
   const getContentData = () => S.getContentData();
-  const loadContent = () => S.loadContent();
 
   const STORAGE_BOOKMARKS = 'workout_bookmarks';
 
@@ -202,6 +201,7 @@
     ) {
       return true;
     }
+    if ((article.body || []).join(' ').toLowerCase().includes(q)) return true;
     if (isHubArticle(article)) {
       return hubList(article).some(function (item) {
         return hubItemMatchesSearch(item, q);
@@ -308,33 +308,10 @@
 
   function showLoadBanner() {
     var banner = $('#loadBanner');
-    if (!banner) return;
     var data = getContentData();
-    var err = window.Workout && window.Workout.loadError;
-    if (err || !data || !data.articles || !data.articles.length) {
-      banner.classList.remove('hidden');
-      var msg = $('#loadBannerText');
-      if (msg) {
-        if (err) {
-          msg.textContent = 'Не удалось загрузить материалы. Проверьте, что на сайте есть папка data/content.json. ' +
-            'Попробуйте обновить страницу.';
-        } else {
-          msg.textContent = 'Материалы не найдены. Загрузите data/content.json на сервер.';
-        }
-      }
-    } else {
-      banner.classList.add('hidden');
-    }
-  }
-
-  function renderStats() {
-    var data = getContentData();
-    var articles = (data && data.articles) || [];
-    var el = $('#heroStats');
-    if (!el) return;
-    el.innerHTML =
-      '<div class="hero__stat"><strong>' + articles.length + '</strong>материалов</div>' +
-      '<div class="hero__stat"><strong>' + getBookmarks().length + '</strong>в закладках</div>';
+    if (!banner || !data) return;
+    banner.classList.toggle('hidden', data.articles.length > 0);
+    if (!data.articles.length) $('#loadBannerText').textContent = 'В репозитории GitHub пока нет материалов.';
   }
 
   function renderCards() {
@@ -391,7 +368,6 @@
         e.stopPropagation();
         var now = toggleBookmark(article.id);
         bm.classList.toggle('is-saved', now);
-        renderStats();
       });
 
       grid.appendChild(card);
@@ -421,12 +397,13 @@
 
     var videosEl = $('#detailVideos');
     var photos = window.renderWorkoutPhotos(article);
+    var body = (article.body || []).map(markdownLite).join('');
     if (isHubArticle(article)) {
-      $('#detailContent').innerHTML = photos + renderHubLevel(article);
+      $('#detailContent').innerHTML = photos + body + renderHubLevel(article);
       var hubRoot = $('#detailContent .hub-materials-ui');
       if (hubRoot) bindHubNav(hubRoot, article);
     } else {
-      $('#detailContent').innerHTML = photos + (article.body || []).map(markdownLite).join('');
+      $('#detailContent').innerHTML = photos + body;
     }
     videosEl.innerHTML = (article.videos || []).map(renderVideoBlock).join('');
     videosEl.hidden = !videosEl.innerHTML;
@@ -442,7 +419,6 @@
       $$('[data-bookmark="' + CSS.escape(id) + '"]').forEach(function (b) {
         b.classList.toggle('is-saved', now);
       });
-      renderStats();
     };
 
     if (window.innerWidth >= 768 && sourceCard) runFlipTransition(sourceCard);
@@ -551,12 +527,6 @@
       if (e.key === 'Escape' && !$('#mediaLightbox.is-open') && $('#detail').classList.contains('is-open')) closeDetail();
     });
 
-    window.addEventListener('content-updated', function () {
-      if (openArticleId) closeDetail();
-      renderStats();
-      renderCards();
-    });
-
     window.addEventListener('site-config-updated', function () {
       populateCategorySelect();
       if (openArticleId) closeDetail();
@@ -566,11 +536,11 @@
 
   window.WorkoutMain = {
     renderCards: renderCards,
-    renderStats: renderStats,
     populateCategorySelect: populateCategorySelect,
     isHubArticle: isHubArticle,
     renderHubLevel: renderHubLevel,
     bindHubNav: bindHubNav,
+    refreshPublished: refreshPublished,
   };
 
   function fixStaticAssets() {
@@ -585,32 +555,44 @@
     if (icon) icon.href = window.Workout.assetUrl('logo.jpg');
   }
 
+  async function loadPublished(revision) {
+    var loadJson = window.Workout.loadGitHubJson;
+    var [config, content, sections] = await Promise.all([
+      loadJson('data/site-config.json', (data) => Array.isArray(data?.mainTabs) &&
+        Array.isArray(data.materialFilters) && Array.isArray(data.customPages), revision),
+      loadJson('data/content.json', (data) => Array.isArray(data?.articles), revision),
+      loadJson('data/sections.json', (data) => Array.isArray(data?.sections), revision),
+    ]);
+    window.SectionsStore.setPublishedSections(sections);
+    window.SiteConfigStore.setPublishedSiteConfig(config);
+    S.setPublishedContent(content);
+  }
+
+  async function refreshPublished(revision) {
+    await loadPublished(revision);
+    var nav = window.SiteNav;
+    nav.applyHero();
+    nav.renderMainTabs();
+    nav.renderFilters();
+    nav.renderAllCustomViews();
+    nav.setMainView('materials');
+    window.dispatchEvent(new CustomEvent('site-config-updated'));
+    window.dispatchEvent(new CustomEvent('sections-updated'));
+  }
+
   async function init() {
     try {
       fixStaticAssets();
-      if (window.SiteConfigStore) await window.SiteConfigStore.loadSiteConfig();
-      await loadContent();
-      if (window.SectionsStore) await window.SectionsStore.loadSections();
-      if (window.SiteConfigStore.isDraftEnabled()) {
-        await window.WorkoutAttachments.loadPreviews(window.SiteConfigStore.getDraftFiles()).catch(function (error) {
-          console.warn('Не удалось восстановить локальный предпросмотр вложений:', error);
-        });
-      }
+      await loadPublished();
       if (window.SiteNav) await window.SiteNav.init();
-      if (window.WorkoutAdmin) {
-        try {
-          await window.WorkoutAdmin.init();
-        } catch (adminErr) {
-          console.error('Admin init failed:', adminErr);
-        }
-      }
       if (window.SectionsAdmin) window.SectionsAdmin.init();
-      if (window.SiteBuilder) window.SiteBuilder.init();
       if (window.SectionsUI) await window.SectionsUI.init();
       bindEvents();
       populateCategorySelect();
-      renderStats();
       renderCards();
+      if (window.WorkoutAdmin) {
+        window.WorkoutAdmin.init().catch(function (error) { console.error('Admin init failed:', error); });
+      }
     } catch (e) {
       console.error(e);
       var banner = $('#loadBanner');
@@ -619,11 +601,15 @@
         var t = $('#loadBannerText');
         if (t) {
           var msg = (e && (e.message || e.toString && e.toString())) ? String(e.message || e.toString()) : 'Неизвестная ошибка';
-          t.textContent = 'Ошибка загрузки: ' + msg;
+          t.textContent = msg + ' Проверьте подключение и обновите страницу.';
         }
       }
     }
   }
+
+  window.addEventListener('pageshow', function (event) {
+    if (event.persisted) window.location.reload();
+  });
 
   window.WorkoutBoot = init;
 })();

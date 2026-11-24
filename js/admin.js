@@ -5,15 +5,11 @@
   const S = window.WorkoutStore;
   const attachments = window.WorkoutAttachments;
   const STORAGE_PASSWORD = S.STORAGE_PASSWORD;
-  const STORAGE_JSONBIN = S.STORAGE_JSONBIN;
-  const getContentData = () => S.getContentData();
-  const clearContentLocal = () => S.clearContentLocal();
+  const getContentData = () => S.getEditableContent();
   const downloadContentJson = () => S.downloadContentJson();
   const importContentFromFile = (f) => S.importContentFromFile(f);
   const isAdminLoggedIn = () => S.isAdminLoggedIn();
   const loadAdminConfig = () => S.loadAdminConfig();
-  const loadContent = () => S.loadContent();
-  const publishToJsonBin = (d) => S.publishToJsonBin(d);
   const saveContentLocal = (d) => S.saveContentLocal(d);
   const setAdminLoggedIn = (v) => S.setAdminLoggedIn(v);
   const sha256 = (t) => S.sha256(t);
@@ -27,10 +23,6 @@
 
 let editingId = null;
 let materialHubEditor = null;
-
-function notifyContentUpdated() {
-  window.dispatchEvent(new CustomEvent('content-updated'));
-}
 
 function openAdmin() {
   $('#adminPanel')?.classList.add('is-open');
@@ -136,8 +128,6 @@ function openEditor(id = null) {
   $('#editorBody').value = (article?.body || []).join('\n\n');
   $('#editorAttachments').innerHTML = attachments.renderEditor(article || {});
 
-  const hasHub = hubItems.length > 0;
-  $('#editorBodyWrap')?.classList.toggle('hidden', hasHub);
   mountMaterialHubEditor(hubItems);
 }
 
@@ -152,6 +142,11 @@ function collectEditorData() {
   const items = materialHubEditor ? materialHubEditor.collect() : [];
   const media = attachments.collectEditor($('#editorAttachments'));
 
+  const body = $('#editorBody').value
+    .split(/\n\n+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
   if (items.length > 0) {
     const hub = {
       ...existing,
@@ -163,7 +158,7 @@ function collectEditorData() {
       type: 'hub',
       subSections: items,
       items: items,
-      body: [],
+      body,
       ...media,
       accent: existing?.accent || '#FF2D2D',
     };
@@ -172,10 +167,6 @@ function collectEditorData() {
     return hub;
   }
 
-  const body = $('#editorBody').value
-    .split(/\n\n+/)
-    .map((p) => p.trim())
-    .filter(Boolean);
   const plain = {
     ...existing,
     id: articleId(data, title),
@@ -217,7 +208,6 @@ function saveArticle() {
     showToast(error.message);
     return;
   }
-  notifyContentUpdated();
   renderAdminList();
   hideEditor();
   showToast('Черновик материала сохранён в этом браузере');
@@ -232,7 +222,6 @@ function deleteArticle(id) {
     showToast(error.message);
     return;
   }
-  notifyContentUpdated();
   renderAdminList();
   showToast('Материал удалён из черновика');
 }
@@ -243,36 +232,6 @@ function showToast(msg) {
   t.textContent = msg;
   t.classList.add('is-visible');
   setTimeout(() => t.classList.remove('is-visible'), 2800);
-}
-
-async function handlePublishCloud() {
-  try {
-    await publishToJsonBin(getContentData());
-    showToast('Опубликовано в облако — видят все');
-  } catch (e) {
-    alert(e.message || 'Ошибка облака');
-  }
-}
-
-function saveJsonBinSettings() {
-  const settings = {
-    binId: $('#jsonBinId').value.trim(),
-    accessKey: $('#jsonBinAccessKey').value.trim(),
-    masterKey: $('#jsonBinMasterKey').value.trim(),
-  };
-  localStorage.setItem(STORAGE_JSONBIN, JSON.stringify(settings));
-  showToast('Настройки облака сохранены');
-}
-
-function loadJsonBinSettings() {
-  try {
-    const s = JSON.parse(localStorage.getItem(STORAGE_JSONBIN) || '{}');
-    if (s.binId) $('#jsonBinId').value = s.binId;
-    if (s.accessKey) $('#jsonBinAccessKey').value = s.accessKey;
-    if (s.masterKey) $('#jsonBinMasterKey').value = s.masterKey;
-  } catch {
-    /* ignore */
-  }
 }
 
 async function changePassword() {
@@ -467,7 +426,17 @@ function bindGhEvents() {
         commitLink.href = 'https://github.com/' + window.GitHubPush.DEFAULT_REPO + '/commit/' + result.sha;
         commitLink.textContent = 'Открыть коммит ' + result.sha.slice(0, 7);
         commitLink.hidden = false;
-        updatePublishHint('GitHub подтвердил коммит в ветке ' + window.GitHubPush.DEFAULT_BRANCH + '. Публичный сайт обновляется через GitHub Pages.', true);
+        window.SiteConfigStore.clearPublishedDrafts(files);
+        updatePublishHint('GitHub подтвердил коммит. Загружаю опубликованные данные…', true);
+        try {
+          await window.WorkoutMain.refreshPublished(result.sha);
+          hideEditor();
+          renderAdminList();
+          window.SiteBuilder.render();
+          updatePublishHint('Данные опубликованы и загружены с GitHub.', true);
+        } catch (error) {
+          updatePublishHint('Коммит сохранён на GitHub. ' + error.message + ' Обновите страницу.', false);
+        }
         showToast('Сохранено на GitHub');
       } catch (e) {
         updatePublishHint('Публикация не подтверждена. ' + e.message, false);
@@ -524,7 +493,7 @@ function bindAdminEvents() {
 
   $('#adminDownloadConfig')?.addEventListener('click', () => {
     if (window.SiteConfigStore) {
-      window.SiteConfigStore.downloadSiteConfigJson(window.SiteConfigStore.getSiteConfig());
+      window.SiteConfigStore.downloadSiteConfigJson();
       showToast('site-config.json скачан');
     }
   });
@@ -540,7 +509,6 @@ function bindAdminEvents() {
     if (!file) return;
     try {
       await importContentFromFile(file);
-      notifyContentUpdated();
       renderAdminList();
       showToast('Импорт выполнен');
     } catch {
@@ -549,31 +517,18 @@ function bindAdminEvents() {
     e.target.value = '';
   });
 
-  $('#adminReset')?.addEventListener('click', async () => {
-    if (!confirm('Сбросить черновик и загрузить данные с GitHub?')) return;
-    if (window.SiteConfigStore) window.SiteConfigStore.clearAllDrafts();
-    else clearContentLocal();
-    await loadContent();
-    if (window.SiteConfigStore) await window.SiteConfigStore.loadSiteConfig();
-    if (window.SectionsStore) await window.SectionsStore.loadSections();
-    if (window.SiteNav) {
-      window.SiteNav.renderMainTabs();
-      window.SiteNav.renderFilters();
-      window.SiteNav.renderAllCustomViews();
-      window.SiteNav.applyHero();
-    }
-    notifyContentUpdated();
-    window.dispatchEvent(new CustomEvent('site-config-updated'));
+  $('#adminReset')?.addEventListener('click', () => {
+    if (!confirm('Сбросить все локальные черновики?')) return;
+    window.SiteConfigStore.clearAllDrafts();
+    hideEditor();
     renderAdminList();
-    showToast('Загружено с сервера');
+    window.SectionsAdmin.resetEditor();
+    window.SiteBuilder.render();
+    showToast('Черновики сброшены');
   });
 
   bindGhEvents();
 
-  var publishCloudBtn = $('#adminPublishCloud');
-  if (publishCloudBtn) publishCloudBtn.addEventListener('click', handlePublishCloud);
-  var saveJsonBinBtn = $('#saveJsonBinSettings');
-  if (saveJsonBinBtn) saveJsonBinBtn.addEventListener('click', saveJsonBinSettings);
   var changePwdBtn = $('#changePasswordBtn');
   if (changePwdBtn) changePwdBtn.addEventListener('click', changePassword);
 
@@ -593,7 +548,6 @@ function bindAdminEvents() {
 
   async function initAdmin() {
     await loadAdminConfig();
-    loadJsonBinSettings();
     bindAdminEvents();
     if (shouldOpenAdminFromUrl()) {
       openAdminEntry();

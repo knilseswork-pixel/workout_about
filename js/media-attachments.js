@@ -9,7 +9,6 @@
     video: { mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', ogv: 'video/ogg' },
   };
   const limits = { photo: 10, video: 25 };
-  const previews = new Map();
   let database;
 
   function openDatabase() {
@@ -57,17 +56,8 @@
     })));
   }
 
-  function preview(path, blob) {
-    if (blob && !previews.has(path)) previews.set(path, URL.createObjectURL(blob));
-  }
-
-  async function loadPreviews(data) {
-    const entries = await referencedFiles(data);
-    entries.forEach(({ path, blob }) => preview(path, blob));
-  }
-
   function assetUrl(path) {
-    return previews.get(path) || media.resolveUrl(path);
+    return media.resolveUrl(path);
   }
 
   function photos(data) {
@@ -142,7 +132,6 @@
     try {
       const entries = Array.from(input.files, (file) => prepareFile(file, kind));
       await saveFiles(entries);
-      entries.forEach(({ path, blob }) => preview(path, blob));
       const lines = entries.map(({ path, title }) => kind === 'photo' ? path : (title || 'Видео') + ' | ' + path);
       links.value = [links.value.trim(), ...lines].filter(Boolean).join('\n');
       status.textContent = 'Файлы прикреплены. Сохраните черновик.';
@@ -154,5 +143,5 @@
     }
   });
 
-  window.WorkoutAttachments = { assetUrl, photos, renderEditor, collectEditor, referencedFiles, loadPreviews };
+  window.WorkoutAttachments = { assetUrl, photos, renderEditor, collectEditor, referencedFiles };
 })();

@@ -29,7 +29,7 @@
   function renderSectionsAdminList() {
     var list = $('#adminSectionsList');
     if (!list) return;
-    var data = SS.getSectionsData();
+    var data = SS.getEditableSections();
     if (!data) return;
 
     var hidden = ['competition', 'new-client'];
@@ -511,7 +511,7 @@
   }
 
   function openSectionEditor(sectionId, itemId) {
-    var found = SS.findItem(sectionId, itemId);
+    var found = SS.findItem(sectionId, itemId, SS.getEditableSections());
     if (!found) return;
     editingSectionId = sectionId;
     editingItemId = itemId;
@@ -611,7 +611,7 @@
 
   function collectSectionEditorData() {
     syncNestedSubsFromDom();
-    var found = SS.findItem(editingSectionId, editingItemId);
+    var found = SS.findItem(editingSectionId, editingItemId, SS.getEditableSections());
     if (!found) return null;
     var item = JSON.parse(JSON.stringify(found.item));
     var tpl = found.section.template;
@@ -645,7 +645,7 @@
     var item = collectSectionEditorData();
     if (!item) return;
 
-    var data = structuredClone(SS.getSectionsData());
+    var data = SS.getEditableSections();
     var sec = data.sections.find(function (s) {
       return s.id === editingSectionId;
     });
@@ -661,7 +661,6 @@
       showToast(error.message);
       return;
     }
-    window.dispatchEvent(new CustomEvent('sections-updated'));
     renderSectionsAdminList();
     showToast('Черновик раздела сохранён в этом браузере');
   }
@@ -685,7 +684,6 @@
           var parsed = JSON.parse(reader.result);
           if (!Array.isArray(parsed?.sections)) throw new Error('Неверный формат');
           SS.saveSectionsLocal(parsed);
-          window.dispatchEvent(new CustomEvent('sections-updated'));
           renderSectionsAdminList();
           hideSectionEditor();
           showToast('Разделы импортированы');
@@ -696,22 +694,25 @@
       reader.readAsText(file);
       e.target.value = '';
     });
-    $('#adminResetSections')?.addEventListener('click', async function () {
+    $('#adminResetSections')?.addEventListener('click', function () {
       if (!confirm('Сбросить локальные изменения разделов?')) return;
-      localStorage.removeItem('workout_sections_data');
-      await SS.loadSections();
-      window.dispatchEvent(new CustomEvent('sections-updated'));
-      renderSectionsAdminList();
-      hideSectionEditor();
-      showToast('Разделы загружены с сервера');
+      window.SiteConfigStore.clearDraft('sections');
+      resetEditor();
+      showToast('Черновик разделов сброшен');
     });
   }
 
+  function resetEditor() {
+    renderSectionsAdminList();
+    hideSectionEditor();
+  }
+
   window.SectionsAdmin = {
+    resetEditor: resetEditor,
     renderList: renderSectionsAdminList,
     init: function () {
       bindSectionAdminEvents();
-      window.addEventListener('sections-updated', renderSectionsAdminList);
+      window.addEventListener('sections-updated', resetEditor);
     },
   };
 })();

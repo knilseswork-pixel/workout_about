@@ -23,7 +23,7 @@
     const url = httpUrl(path);
     if (url) return url.href;
     if (!path || /^[a-z][a-z0-9+.-]*:|^[/\\]{2}|[\\\u0000-\u001f]/i.test(path)) return '';
-    return window.Workout.assetUrl(path);
+    return window.Workout.githubFileUrl(path);
   }
 
   function extractDriveId(url) {
